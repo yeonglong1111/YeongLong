@@ -62,7 +62,7 @@ table.data tr:hover td{background:#f8fafd}
 .section-hdr{font-size:12px;font-weight:500;color:#1a2744;margin:12px 0 8px;padding-bottom:5px;border-bottom:1px solid #eef1f6}
 .print-hint{font-size:11px;color:#666;background:#f8fafd;padding:8px 12px;border-radius:6px;margin-bottom:10px;border-left:3px solid #c9a84c}
 @media print{
-  @page{size:25.7cm 36.4cm;margin:0}
+  @page{size:21.4cm 14cm;margin:5mm}
   .navbar,.nav-tabs,.btn,.modal-bg{display:none!important}
   .content{padding:0;max-width:100%}
 }
@@ -664,128 +664,146 @@ function genPrintHTML(order,cust,showPrices){
   const roc=toROC(order.date);const rocM=toROCM(order.date);
   const title=showPrices?'請款單':'銷貨單';
   const items=order.items||[];
-  const MIN_ROWS=11;
-  let rows='';
+  const total=order.total||0;
+  const cols=showPrices?8:7;
+
+  // 建立每列資料的 TD 內容陣列
+  const rowsData=[];
   if(showPrices){
     items.forEach((item,i)=>{
-      const itemDate=item.orderDate?toROC(item.orderDate).replace(/-/g,''):roc.replace(/-/g,'');
-      rows+=`<tr><td>${i+1}</td><td>${itemDate}</td><td style="text-align:left;padding-left:4px">${item.product} ${item.color}</td><td>${item.size}</td><td>${item.qty}</td><td>${item.unitPrice}</td><td>${fmtN(item.amount)}</td><td>${item.note||''}</td></tr>`;
+      const d=item.orderDate?toROC(item.orderDate).replace(/-/g,''):roc.replace(/-/g,'');
+      rowsData.push(`<td>${i+1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product} ${item.color}</td><td>${item.size}</td><td>${item.qty}</td><td>${item.unitPrice}</td><td>${fmtN(item.amount)}</td><td>${item.note||''}</td>`);
     });
-    if(order.shipping>0)rows+=`<tr><td>${items.length+1}</td><td></td><td style="text-align:left;padding-left:4px">運費</td><td></td><td>1</td><td></td><td>${fmtN(order.shipping)}</td><td></td></tr>`;
-    const used=items.length+(order.shipping>0?1:0);
-    for(let i=used;i<MIN_ROWS;i++)rows+=`<tr style="height:18px"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+    if(order.shipping>0)rowsData.push(`<td>${items.length+1}</td><td></td><td style="text-align:left;padding-left:4px">運費</td><td></td><td>1</td><td></td><td>${fmtN(order.shipping)}</td><td></td>`);
   }else{
     items.forEach((item,i)=>{
-      rows+=`<tr><td>${i+1}</td><td style="text-align:left;padding-left:4px">${item.product} ${item.color}</td><td>${item.size}</td><td>${item.qty}</td><td></td><td></td><td>${item.note||''}</td></tr>`;
+      rowsData.push(`<td>${i+1}</td><td style="text-align:left;padding-left:4px">${item.product} ${item.color}</td><td>${item.size}</td><td>${item.qty}</td><td></td><td></td><td>${item.note||''}</td>`);
     });
-    for(let i=items.length;i<MIN_ROWS;i++)rows+=`<tr style="height:18px"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
   }
-  const total=order.total||0;
-  return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
-<style>
-@page{size:auto;margin:0}
+
+  const hdrH=`<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
+  const infoH=`<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div>${showPrices?`<div class="ir"><span class="ib">對帳月份：</span><span>${rocM}</span></div>`:`<div class="ir"><span class="ib">銷貨單號：</span><span>${order.orderNumber}</span></div>`}<div class="ir"><span class="ib">日期：</span><span>${showPrices?rocM:roc}</span></div></div></div>`;
+  const chH=`<th style="width:4%">No.</th>${showPrices?'<th style="width:9%">訂購日期</th>':''}<th style="${showPrices?'width:29%':'width:38%'};text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:12%">金額</th><th style="width:14%">備註</th>`;
+  const ftrH=`<div class="footer"><div>公司地址：${COMPANY.addr}</div><div>電話：${COMPANY.tel}　　Line ID：${COMPANY.line}</div></div>`;
+  const signH=showPrices
+    ?`<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${fmtN(total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>`
+    :`<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="2" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>`;
+  const noteH=order.note?`<tr><td colspan="${cols}" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000"><strong>備註：</strong>${order.note}</td></tr>`:'';
+
+  const measRows=rowsData.map(tds=>`<tr class="dr">${tds}</tr>`).join('');
+  // 安全地嵌入 JSON，將 / 替換為 \/ 防止字串中出現 script 結束標籤
+  const D=JSON.stringify({r:rowsData,hdr:hdrH,info:infoH,ch:chH,ftr:ftrH,sign:signH,note:noteH,title}).replace(/\//g,'\\/');
+
+  const css=`@page{size:21.4cm 14cm;margin:5mm}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:"Microsoft JhengHei","PingFang TC",sans-serif;font-size:14pt;color:#000;width:25.7cm;display:inline-block}
-.outer{border:2px solid #000;padding:10px 12px;width:25.7cm;page-break-after:avoid}
-.hdr{text-align:center;margin-bottom:6px}
-.hdr h1{font-size:25pt;font-weight:700;letter-spacing:3px}
-.hdr h2{font-size:10pt;letter-spacing:1px}
-.ttl{text-align:center;font-size:20pt;font-weight:700;padding:4px;margin:10px 0 6px 0}
-.info{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:6px;font-size:13pt}
-.ir{display:flex;align-items:baseline;margin-bottom:3px}
-.ib{font-weight:700;white-space:nowrap;min-width:100px}
-table{width:100%;border-collapse:collapse;font-size:13pt}
-th,td{border:1px solid #000;padding:4px 6px;text-align:center;vertical-align:middle;color:#000;background:#fff}
-th{font-weight:700;font-size:13pt}
-.tr td{font-weight:700;font-size:13pt}
-.sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:13pt;padding:3px 2px;white-space:nowrap}
-.footer{margin-top:8px;font-size:12pt;color:#000}
-</style></head><body>
-<div class="outer">
-<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>
-<div class="ttl">${title}</div>
-<div class="info">
-<div>
-<div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div>
-<div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div>
-<div class="ir"><span class="ib">送貨地址：</span><span style="font-size:13pt;word-break:break-all">${cust.address}</span></div>
+body{font-family:"Microsoft JhengHei","PingFang TC",sans-serif;font-size:11pt;color:#000}
+#meas{position:absolute;top:0;left:0;visibility:hidden;width:calc(21.4cm - 10mm)}
+.page{width:100%;border:2px solid #000;page-break-after:always}
+.last{page-break-after:auto}
+.hdr{text-align:center;padding:5px 8px 0}
+.hdr h1{font-size:20pt;font-weight:700;letter-spacing:2px}
+.hdr h2{font-size:7pt;letter-spacing:1px}
+.ttl{text-align:center;font-size:16pt;font-weight:700;padding:2px 8px 2px}
+.pg{font-size:10pt;font-weight:400}
+.info{display:grid;grid-template-columns:1fr 1fr;padding:0 8px 4px;font-size:12pt;border-bottom:1px solid #000}
+.ir{display:flex;align-items:baseline;margin-bottom:2px}
+.ib{font-weight:700;white-space:nowrap;min-width:60px}
+table{width:100%;border-collapse:collapse;font-size:11pt}
+th,td{border:1px solid #000;padding:2px 3px;text-align:center;vertical-align:middle;color:#000;background:#fff}
+th{font-weight:700;font-size:11pt}
+.tr td{font-weight:700;font-size:11pt}
+.sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:11pt;padding:2px 1px;white-space:nowrap}
+.footer{padding:4px 8px;font-size:11pt;border-top:1px solid #000}
+@media print{#meas{display:none}}`;
+
+  return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
+<style>${css}</style></head><body>
+<div id="meas">
+  <div id="mh">${hdrH}<div class="ttl">${title}</div>${infoH}</div>
+  <div id="mch"><table><thead><tr>${chH}</tr></thead></table></div>
+  <div id="mr"><table><tbody>${measRows}</tbody></table></div>
+  <div id="ms"><table><tbody>${signH}</tbody></table></div>
+  ${noteH?`<div id="mn"><table><tbody>${noteH}</tbody></table></div>`:''}
+  <div id="mf">${ftrH}</div>
 </div>
-<div>
-<div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div>
-${showPrices
-  ?`<div class="ir"><span class="ib">對帳月份：</span><span>${rocM}</span></div>`
-  :`<div class="ir"><span class="ib">銷貨單號：</span><span>${order.orderNumber}</span></div>`}
-<div class="ir"><span class="ib">日期：</span><span>${showPrices?rocM:roc}</span></div>
-</div>
-</div>
-<table>
-<thead><tr>
-<th style="width:4%">No.</th>
-${showPrices?'<th style="width:9%">訂購日期</th>':''}
-<th style="${showPrices?'width:29%':'width:38%'};text-align:left;padding-left:6px">產名規格</th>
-<th style="width:10%">尺寸(CM)</th>
-<th style="width:10%">數量</th>
-<th style="width:10%">單價</th>
-<th style="width:12%">金額</th>
-<th style="width:14%">備註</th>
-</tr></thead>
-<tbody>
-${rows}
-${order.note?`<tr><td colspan="${showPrices?8:7}" style="text-align:left;padding:5px 8px;font-size:13pt;border:1px solid #000"><strong>備註：</strong>${order.note}</td></tr>`:''}
-${showPrices
-  ?`<tr class="tr">
-      <td class="sign" rowspan="3" style="height:80px">客戶簽章</td>
-      <td colspan="3" rowspan="3" style="background:#fff"></td>
-      <td colspan="2" style="text-align:center">合計</td>
-      <td colspan="2">${fmtN(total)}</td>
-    </tr>
-    <tr class="tr">
-      <td colspan="2" style="text-align:center">稅額</td>
-      <td colspan="2"></td>
-    </tr>
-    <tr class="tr">
-      <td colspan="2" style="text-align:center">總計</td>
-      <td colspan="2"></td>
-    </tr>`
-  :`<tr class="tr">
-      <td class="sign" rowspan="3" style="height:80px">客戶簽章</td>
-      <td colspan="2" rowspan="3" style="background:#fff"></td>
-      <td colspan="2" style="text-align:center">合計</td>
-      <td colspan="2"></td>
-    </tr>
-    <tr class="tr">
-      <td colspan="2" style="text-align:center">稅額</td>
-      <td colspan="2"></td>
-    </tr>
-    <tr class="tr">
-      <td colspan="2" style="text-align:center">總計</td>
-      <td colspan="2"></td>
-    </tr>`
-}
-</tbody>
-</table>
-<div class="footer">
-<div style="margin-bottom:5px">公司地址：${COMPANY.addr}</div>
-<div>電話：${COMPANY.tel}　　Line ID：${COMPANY.line}</div>
-</div>
-</div>
+<div id="out"></div>
+<script>
+var D=${D};
+window.onload=function(){
+  // 量測可用頁高（14cm - 5mm×2 邊距）
+  var ref=document.createElement('div');
+  ref.style.cssText='position:absolute;top:0;left:0;height:calc(14cm - 10mm);visibility:hidden;pointer-events:none';
+  document.body.appendChild(ref);
+  var PH=ref.offsetHeight;
+  document.body.removeChild(ref);
+  // 初步估算分頁所需的各元件高度
+  var mhH=document.getElementById('mh').offsetHeight;
+  var mchH=document.getElementById('mch').offsetHeight;
+  var msH=document.getElementById('ms').offsetHeight;
+  var mfH=document.getElementById('mf').offsetHeight;
+  var mnEl=document.getElementById('mn');
+  var mnH=mnEl?mnEl.offsetHeight:0;
+  var drs=document.querySelectorAll('#mr .dr');
+  var rh=[].map.call(drs,function(el){return el.offsetHeight;});
+  document.getElementById('meas').remove();
+  var ovh=mhH+mchH+mfH;
+  // 初步分頁（估算）
+  var pages=[];var cur=[];var usedH=0;
+  for(var i=0;i<rh.length;i++){
+    if(usedH+rh[i]<=PH-4-ovh){cur.push(i);usedH+=rh[i];}
+    else{if(cur.length){pages.push(cur.slice());}cur=[i];usedH=rh[i];}
+  }
+  if(cur.length)pages.push(cur);
+  var lp=pages[pages.length-1];
+  var lh=lp.reduce(function(s,i){return s+rh[i];},0);
+  while(lh+ovh+msH+mnH>PH-4&&lp.length>1){
+    var mv=lp.pop();lh-=rh[mv];
+    var np=[mv];pages.push(np);lp=np;lh=rh[mv];
+  }
+  // 建立頁面 div 的函式
+  function build(){
+    var tp=pages.length;
+    var out=document.getElementById('out');
+    out.innerHTML='';
+    for(var p=0;p<tp;p++){
+      var pr=pages[p];var isLast=p===tp-1;
+      var pg=tp>1?'　<span class="pg">(第'+(p+1)+'頁/共'+tp+'頁)</span>':'';
+      var rows='';for(var k=0;k<pr.length;k++)rows+='<tr class="dr">'+D.r[pr[k]]+'</tr>';
+      var div=document.createElement('div');
+      div.className='page'+(isLast?' last':'');
+      div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
+        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLast?D.note+D.sign:'')+'</tbody></table>'
+        +D.ftr;
+      out.appendChild(div);
+    }
+  }
+  // 迭代校正：量測實際渲染高度，超出就移最後一筆到下一頁
+  for(var iter=0;iter<20;iter++){
+    build();
+    var divs=document.getElementById('out').querySelectorAll('.page');
+    var changed=false;
+    for(var p=0;p<divs.length;p++){
+      if(divs[p].offsetHeight>PH&&pages[p].length>1){
+        var mv2=pages[p].pop();
+        if(p+1>=pages.length)pages.push([mv2]);
+        else pages[p+1].unshift(mv2);
+        changed=true;
+      }
+    }
+    if(!changed)break;
+  }
+  build();
+  setTimeout(function(){window.print();},500);
+};
+<\/script>
 </body></html>`;
 }
 
-
-function exportHTML(order,cust,showPrices){
-  const html=genPrintHTML(order,cust,showPrices);
-  const blob=new Blob([html],{type:'text/html;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download=`${order.orderNumber}_${cust.name}_${showPrices?'請款單':'銷貨單'}.html`;
-  a.click();URL.revokeObjectURL(url);
-}
-
 function printDoc(order,cust,showPrices){
-  const html=genPrintHTML(order,cust,showPrices);
-  const w=window.open('','_blank','width=820,height=580');
-  if(w){w.document.write(html);w.document.close();setTimeout(()=>w.print(),700);}
+  const w=window.open('','_blank','width=820,height=800');
+  if(!w)return;
+  w.document.write(genPrintHTML(order,cust,showPrices));
+  w.document.close();
 }
 
 /* ===== NEW ORDER MODAL ===== */
@@ -1114,7 +1132,7 @@ function EditOrderModal({order,customers,prices,products,colors,onUpdate,onClose
 }
 
 /* ===== ORDER ROW ===== */
-function OrderRow({order,customers,onDelete,onExport,onEdit,canManage=true,isAdmin=true}){
+function OrderRow({order,customers,onDelete,onEdit,canManage=true,isAdmin=true}){
   const[exp,setExp]=useState(false);
   const cust=customers.find(c=>c.id===order.customerId)||{name:'?',contact:'',phone:'',address:''};
   return(
@@ -1131,7 +1149,6 @@ function OrderRow({order,customers,onDelete,onExport,onEdit,canManage=true,isAdm
             {canManage&&<button className="btn btn-sm" onClick={()=>onEdit(order)}>✏️ 編輯</button>}
             <button className="btn btn-sm" onClick={()=>printDoc(order,cust,false)}>🖨 銷貨單</button>
             {canManage&&<button className="btn btn-sm" style={{background:'#faeeda',color:'#854f0b',border:'1px solid #e8c97a'}} onClick={()=>printDoc(order,cust,true)}>🖨 請款單</button>}
-            <button className="btn btn-sm" onClick={()=>onExport(order,cust,false,'html')}>📄 HTML</button>
             {canManage&&<button className="btn btn-danger btn-sm" onClick={()=>onDelete(order.id)}>🗑</button>}
           </div>
         </td>
@@ -1430,120 +1447,276 @@ function PurchaseView({purchases,setPurchases}){
   );
 }
 
+/* ===== MULTI-MONTH STATEMENT PRINT ===== */
+function genMultiStmtHTML(monthsData,cust){
+  const grandTotal=monthsData.reduce((s,m)=>s+m.total,0);
+  const rocMonthLabel=m=>{const[y,mo]=m.split('-');return `${y}年${mo}月`;};
+  const dateRange=monthsData.length>1?`${rocMonthLabel(monthsData[0].month)} ～ ${rocMonthLabel(monthsData[monthsData.length-1].month)}`:rocMonthLabel(monthsData[0].month);
+
+  // 建立扁平列陣（不含 grand，grand 單獨處理）
+  const flatRows=[];
+  monthsData.forEach((md,mIdx)=>{
+    flatRows.push({type:'hdr',html:`<tr><td colspan="7" style="background:#1a2744;color:#f5d98a;font-weight:700;font-size:11pt;padding:2px 4px;text-align:left;border:1px solid #000">${rocMonthLabel(md.month)}</td></tr>`});
+    md.items.forEach((item,i)=>{
+      const d=item.orderDate?toROC(item.orderDate).replace(/-/g,''):'';
+      flatRows.push({type:'data',html:`<tr class="dr"><td>${i+1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product||''} ${item.color||''}</td><td>${item.size||''}</td><td>${item.qty||''}</td><td>${item.unitPrice||''}</td><td style="text-align:right">${fmtN(item.amount)}</td></tr>`});
+    });
+    flatRows.push({type:'sub',html:`<tr class="tr"><td colspan="6" style="text-align:right;font-weight:700">本月合計</td><td style="font-weight:700;font-size:11pt;text-align:right">${fmtN(md.total)}</td></tr>`});
+  });
+  const grandH=`<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center;font-weight:700">總計</td><td style="font-weight:700;text-align:right">${fmtN(grandTotal)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td></td></tr><tr class="tr"><td colspan="2" style="text-align:center">實付</td><td></td></tr>`;
+
+  const hdrH=`<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
+  const infoH=`<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div><div class="ir"><span class="ib">對帳期間：</span><span>${dateRange}</span></div></div></div>`;
+  const chH=`<th style="width:4%">No.</th><th style="width:9%">訂購日期</th><th style="width:29%;text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:14%">金額</th>`;
+  const ftrH=`<div class="footer"><div>公司地址：${COMPANY.addr}</div><div>電話：${COMPANY.tel}　　Line ID：${COMPANY.line}</div></div>`;
+
+  const rowHtmls=flatRows.map(r=>r.html);
+  const rowTypes=flatRows.map(r=>r.type);
+  const measRows=rowHtmls.join('');
+  const D=JSON.stringify({r:rowHtmls,t:rowTypes,grand:grandH,hdr:hdrH,info:infoH,ch:chH,ftr:ftrH}).replace(/\//g,'\\/');
+
+  const css=`@page{size:21.4cm 14cm;margin:5mm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Microsoft JhengHei","PingFang TC",sans-serif;font-size:11pt;color:#000}
+#meas{position:absolute;top:0;left:0;visibility:hidden;width:calc(21.4cm - 10mm)}
+.page{width:100%;border:2px solid #000;page-break-after:always}
+.last{page-break-after:auto}
+.hdr{text-align:center;padding:5px 8px 0}
+.hdr h1{font-size:20pt;font-weight:700;letter-spacing:2px}
+.hdr h2{font-size:7pt;letter-spacing:1px}
+.ttl{text-align:center;font-size:16pt;font-weight:700;padding:2px 8px 2px}
+.pg{font-size:10pt;font-weight:400}
+.info{display:grid;grid-template-columns:1fr 1fr;padding:0 8px 4px;font-size:12pt;border-bottom:1px solid #000}
+.ir{display:flex;align-items:baseline;margin-bottom:2px}
+.ib{font-weight:700;white-space:nowrap;min-width:60px}
+table{width:100%;border-collapse:collapse;font-size:11pt}
+th,td{border:1px solid #000;padding:2px 3px;text-align:center;vertical-align:middle;color:#000;background:#fff}
+th{font-weight:700;font-size:11pt}
+.tr td{font-weight:700;font-size:11pt}
+.sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:11pt;padding:2px 1px;white-space:nowrap}
+.footer{padding:4px 8px;font-size:11pt;border-top:1px solid #000}
+@media print{#meas{display:none}}`;
+
+  return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>請款對帳單</title>
+<style>${css}</style></head><body>
+<div id="meas">
+  <div id="mh">${hdrH}<div class="ttl">請款對帳單</div>${infoH}</div>
+  <div id="mch"><table><thead><tr>${chH}</tr></thead></table></div>
+  <div id="mr"><table><tbody>${measRows}</tbody></table></div>
+  <div id="mg"><table><tbody>${grandH}</tbody></table></div>
+  <div id="mf">${ftrH}</div>
+</div>
+<div id="out"></div>
+<script>
+var D=${D};
+window.onload=function(){
+  var ref=document.createElement('div');
+  ref.style.cssText='position:absolute;top:0;left:0;height:calc(14cm - 10mm);visibility:hidden;pointer-events:none';
+  document.body.appendChild(ref);
+  var PH=ref.offsetHeight;
+  document.body.removeChild(ref);
+  var mhH=document.getElementById('mh').offsetHeight;
+  var mchH=document.getElementById('mch').offsetHeight;
+  var mgH=document.getElementById('mg').offsetHeight;
+  var mfH=document.getElementById('mf').offsetHeight;
+  var allTrs=document.querySelectorAll('#mr tr');
+  var rh=[].map.call(allTrs,function(el){return el.offsetHeight;});
+  document.getElementById('meas').remove();
+  var ovh=mhH+mchH+mfH;
+  // 初步分頁
+  var pages=[];var cur=[];var usedH=0;
+  for(var i=0;i<rh.length;i++){
+    var canBreak=true;
+    if(D.t[i]==='data'&&i>0&&D.t[i-1]==='hdr')canBreak=false;
+    if(D.t[i]==='sub')canBreak=false;
+    if(usedH+rh[i]<=PH-4-ovh){cur.push(i);usedH+=rh[i];}
+    else{
+      if(cur.length&&canBreak){pages.push(cur.slice());cur=[i];usedH=rh[i];}
+      else{cur.push(i);usedH+=rh[i];}
+    }
+  }
+  if(cur.length)pages.push(cur);
+  var lp=pages[pages.length-1];
+  var lh=lp.reduce(function(s,i){return s+rh[i];},0);
+  while(lh+ovh+mgH>PH-4&&lp.length>1){
+    var mv=-1;
+    for(var j=lp.length-1;j>=0;j--){if(D.t[lp[j]]==='data'){mv=j;break;}}
+    if(mv<0)break;
+    var moved=lp.splice(mv,1)[0];lh-=rh[moved];
+    var np=[moved];pages.push(np);lp=np;lh=rh[moved];
+  }
+  function build(){
+    var tp=pages.length;
+    var out=document.getElementById('out');
+    out.innerHTML='';
+    for(var p=0;p<tp;p++){
+      var pr=pages[p];var isLast=p===tp-1;
+      var pg=tp>1?'　<span class="pg">(第'+(p+1)+'頁/共'+tp+'頁)</span>':'';
+      var rows='';for(var k=0;k<pr.length;k++)rows+=D.r[pr[k]];
+      var div=document.createElement('div');
+      div.className='page'+(isLast?' last':'');
+      div.innerHTML=D.hdr+'<div class="ttl">請款對帳單'+pg+'</div>'+D.info
+        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLast?D.grand:'')+'</tbody></table>'
+        +D.ftr;
+      out.appendChild(div);
+    }
+  }
+  // 迭代校正：量測實際渲染高度，超出就移最後可移動筆到下一頁
+  for(var iter=0;iter<20;iter++){
+    build();
+    var divs=document.getElementById('out').querySelectorAll('.page');
+    var changed=false;
+    for(var p=0;p<divs.length;p++){
+      if(divs[p].offsetHeight>PH&&pages[p].length>1){
+        var mv2=-1;
+        for(var j2=pages[p].length-1;j2>=0;j2--){if(D.t[pages[p][j2]]==='data'){mv2=j2;break;}}
+        if(mv2<0)continue;
+        var mv3=pages[p].splice(mv2,1)[0];
+        if(p+1>=pages.length)pages.push([mv3]);
+        else pages[p+1].unshift(mv3);
+        changed=true;
+      }
+    }
+    if(!changed)break;
+  }
+  build();
+  setTimeout(function(){window.print();},500);
+};
+<\/script>
+</body></html>`;
+}
+
 /* ===== STATEMENT VIEW ===== */
 function StatementView({orders,customers,prices}){
   const[year,setYear]=useState(toROCM(today()).split('-')[0]);
-  const[cid,setCid]=useState('');const[month,setMonth]=useState(toROCM(today()).split('-')[1]);
+  const[cid,setCid]=useState('');
+  const[selMonths,setSelMonths]=useState([]);
+
   const allMonths=[...new Set(orders.map(o=>toROCM(o.date)))].sort().reverse();
   const allYears=[...new Set(allMonths.map(m=>m.split('-')[0]))].sort().reverse();
-  const months=['01','02','03','04','05','06','07','08','09','10','11','12'];
-  const filtered=orders.filter(o=>(!cid||o.customerId===cid)&&((year&&month)?toROCM(o.date)===year+'-'+month:(year?toROCM(o.date).startsWith(year+'-'):true)));
+  const yearMonths=allMonths.filter(m=>!year||m.startsWith(year+'-'));
   const cust=customers.find(c=>c.id===cid);
-  const allItems=[];
-  filtered.forEach(o=>{
-    (o.items||[]).forEach(item=>allItems.push({...item,orderDate:o.date,orderNum:o.orderNumber}));
-    if(o.shipping>0)allItems.push({orderDate:o.date,orderNum:o.orderNumber,product:'運費',color:'',size:'',qty:1,unitPrice:'',amount:o.shipping});
-  });
-  const total=allItems.reduce((s,i)=>s+(i.amount||0),0);
 
-  const getStmtOrder=()=>({id:'stmt',customerId:cid,date:filtered[0]?.date||today(),orderNumber:'STMT',
-    items:allItems.filter(i=>i.product!=='運費'),
-    shipping:allItems.filter(i=>i.product==='運費').reduce((s,i)=>s+i.amount,0),total});
+  // 月份 checkbox 切換
+  const toggleM=m=>setSelMonths(prev=>prev.includes(m)?prev.filter(x=>x!==m):[...prev,m].sort());
+  const selectAll=()=>setSelMonths([...yearMonths].sort());
+  const clearAll=()=>setSelMonths([]);
+
+  // 有效選取月份（只考慮此客戶有資料的）
+  const activeSel=selMonths.filter(m=>orders.some(o=>o.customerId===cid&&toROCM(o.date)===m));
+
+  // 每月資料
+  const getMonthData=m=>{
+    const mos=orders.filter(o=>o.customerId===cid&&toROCM(o.date)===m);
+    const items=[];
+    mos.forEach(o=>{
+      (o.items||[]).forEach(item=>items.push({...item,orderDate:o.date,orderNum:o.orderNumber}));
+      if(o.shipping>0)items.push({orderDate:o.date,orderNum:o.orderNumber,product:'運費',color:'',size:'',qty:1,unitPrice:'',amount:o.shipping});
+    });
+    return{month:m,items,total:items.reduce((s,i)=>s+(i.amount||0),0)};
+  };
+
+  const monthsData=activeSel.map(getMonthData);
+  const grandTotal=monthsData.reduce((s,m)=>s+m.total,0);
+
+  const handlePrint=()=>{
+    if(!cust)return alert('請先選擇客戶');
+    if(activeSel.length===0)return alert('請至少勾選一個月份');
+    const w=window.open('','_blank','width=820,height=800');
+    if(!w)return;
+    w.document.write(genMultiStmtHTML(monthsData,cust));
+    w.document.close();
+  };
+
+  const rocML=m=>{const[y,mo]=m.split('-');return`${y}年${mo}月`;};
 
   return(
     <div>
       <div className="card">
         <div className="card-title">對帳單 / 請款單</div>
-        <div className="print-hint">💡 選擇客戶及月份後，系統自動合併當月訂單並帶入門檻價格，產生完整對帳單</div>
-        <div className="form-grid g4" style={{marginBottom:12}}>
+        <div className="print-hint">💡 選擇客戶後勾選月份（可多選），一次列印多月份對帳單，每月小計，最後顯示總計</div>
+        <div className="form-grid g3" style={{marginBottom:12}}>
           <div><label>年份（民國）</label>
-            <select value={year} onChange={e=>setYear(e.target.value)}>
-              <option value="">— 全部年份 —</option>
+            <select value={year} onChange={e=>{setYear(e.target.value);setSelMonths([]);}}>
+              <option value="">— 全部 —</option>
               {allYears.map(y=><option key={y} value={y}>{y}</option>)}
             </select>
           </div>
-          <div><label>月份（民國）</label>
-            <select value={month} onChange={e=>setMonth(e.target.value)}>
-              <option value="">— 全部月份 —</option>
-              {months.map(m=><option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
           <div><label>客戶</label>
-            <select value={cid} onChange={e=>setCid(e.target.value)}>
-              <option value="">— 全部客戶 —</option>
+            <select value={cid} onChange={e=>{setCid(e.target.value);setSelMonths([]);}}>
+              <option value="">— 請選擇客戶 —</option>
               {customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div style={{display:'flex',alignItems:'flex-end',gap:6,flexWrap:'wrap'}}>
-            <button className="btn btn-gold" onClick={()=>{if(!cust||!month)return alert('請選擇客戶及月份');printDoc(getStmtOrder(),cust,true);}}>🖨 列印對帳單</button>
-            <button className="btn btn-sm" onClick={()=>{if(!cust||!month)return alert('請選擇客戶及月份');exportHTML(getStmtOrder(),cust,true);}}>📄 HTML</button>
+            <button className="btn btn-gold" onClick={handlePrint}>🖨 列印對帳單</button>
           </div>
         </div>
-        {filtered.length>0?(!cid?(
-          <div>
-            {customers.filter(c=>filtered.some(o=>o.customerId===c.id)).map(c=>{
-              const custItems=[];
-              filtered.filter(o=>o.customerId===c.id).forEach(o=>{
-                (o.items||[]).forEach(item=>custItems.push({...item,orderDate:o.date,orderNum:o.orderNumber}));
-                if(o.shipping>0)custItems.push({orderDate:o.date,orderNum:o.orderNumber,product:'運費',color:'',size:'',qty:1,unitPrice:'',amount:o.shipping});
-              });
-              const custTotal=custItems.reduce((s,i)=>s+(i.amount||0),0);
-              return(
-                <div key={c.id} style={{marginBottom:24}}>
-                  <div style={{fontWeight:700,fontSize:15,padding:'8px 14px',background:'#1a2744',color:'#f5d98a',borderRadius:'6px 6px 0 0'}}>👥 {c.name}</div>
-                  <div style={{overflowX:'auto'}}>
-                    <table className="data">
-                      <thead><tr><th>訂購日期</th><th>單號</th><th>產品規格</th><th>尺寸(CM)</th><th>數量</th><th>單價</th><th>金額(NT$)</th></tr></thead>
-                      <tbody>
-                        {custItems.map((item,i)=>(
-                          <tr key={i}>
-                            <td>{toROC(item.orderDate)}</td>
-                            <td><span className="badge badge-blue">{item.orderNum}</span></td>
-                            <td>{item.product} {item.color}</td>
-                            <td style={{textAlign:'center'}}>{item.size}</td>
-                            <td style={{textAlign:'center'}}>{item.qty}</td>
-                            <td style={{textAlign:'center'}}>{item.unitPrice}</td>
-                            <td style={{fontWeight:500,textAlign:'right'}}>{fmtN(item.amount)}</td>
-                          </tr>
-                        ))}
-                        <tr style={{background:'#f5f0e0',fontWeight:600}}>
-                          <td colSpan={6} style={{textAlign:'right',paddingRight:14}}>小計</td>
-                          <td style={{fontSize:15,color:'#c0392b',textAlign:'right'}}>{fmtN(custTotal)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })}
-            <div style={{textAlign:'right',fontWeight:700,fontSize:16,padding:'12px 4px',borderTop:'2px solid #1a2744',marginTop:4}}>
-              總計：<span style={{color:'#c0392b'}}>NT$ {fmtN(total)}</span>
+
+        {/* 月份勾選區 */}
+        {yearMonths.length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+              <span style={{fontSize:12,fontWeight:700,color:'#1a2744'}}>勾選月份：</span>
+              <button className="btn btn-sm" onClick={selectAll}>全選</button>
+              <button className="btn btn-sm" onClick={clearAll}>清除</button>
+              {activeSel.length>0&&<span style={{fontSize:12,color:'#c0392b',fontWeight:700}}>{activeSel.length} 個月已選</span>}
+            </div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {yearMonths.map(m=>{
+                const hasData=cid?orders.some(o=>o.customerId===cid&&toROCM(o.date)===m):true;
+                const checked=selMonths.includes(m);
+                return(
+                  <label key={m} style={{display:'flex',alignItems:'center',gap:4,padding:'4px 10px',border:`1px solid ${checked?'#1a2744':'#ccd2dc'}`,borderRadius:6,background:checked?'#1a2744':'#fff',color:checked?'#f5d98a':'#444',cursor:'pointer',fontSize:12,fontWeight:checked?700:400,opacity:hasData?1:0.35}}>
+                    <input type="checkbox" checked={checked} onChange={()=>toggleM(m)} style={{display:'none'}}/>
+                    {rocML(m)}
+                  </label>
+                );
+              })}
             </div>
           </div>
-        ):(
-          <div style={{overflowX:'auto'}}>
-            <table className="data">
-              <thead><tr><th>訂購日期</th><th>單號</th><th>產品規格</th><th>尺寸(CM)</th><th>數量</th><th>單價</th><th>金額(NT$)</th></tr></thead>
-              <tbody>
-                {allItems.map((item,i)=>(
-                  <tr key={i}>
-                    <td>{toROC(item.orderDate)}</td>
-                    <td><span className="badge badge-blue">{item.orderNum}</span></td>
-                    <td>{item.product} {item.color}</td>
-                    <td style={{textAlign:'center'}}>{item.size}</td>
-                    <td style={{textAlign:'center'}}>{item.qty}</td>
-                    <td style={{textAlign:'center'}}>{item.unitPrice}</td>
-                    <td style={{fontWeight:500,textAlign:'right'}}>{fmtN(item.amount)}</td>
-                  </tr>
-                ))}
-                <tr style={{background:'#f5f0e0',fontWeight:600}}>
-                  <td colSpan={6} style={{textAlign:'right',paddingRight:14}}>合計</td>
-                  <td style={{fontSize:15,color:'#c0392b',textAlign:'right'}}>{fmtN(total)}</td>
-                </tr>
-              </tbody>
-            </table>
+        )}
+
+        {/* 預覽 */}
+        {monthsData.length>0?(
+          <div>
+            {monthsData.map((md,idx)=>(
+              <div key={md.month} style={{marginBottom:16}}>
+                <div style={{fontWeight:700,fontSize:14,padding:'6px 14px',background:'#1a2744',color:'#f5d98a',borderRadius:'6px 6px 0 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span>📅 {rocML(md.month)}</span>
+                  <span>NT$ {fmtN(md.total)}</span>
+                </div>
+                <div style={{overflowX:'auto'}}>
+                  <table className="data">
+                    <thead><tr><th>訂購日期</th><th>單號</th><th>產品規格</th><th>尺寸</th><th>數量</th><th>單價</th><th>金額(NT$)</th></tr></thead>
+                    <tbody>
+                      {md.items.map((item,i)=>(
+                        <tr key={i}>
+                          <td>{toROC(item.orderDate)}</td>
+                          <td><span className="badge badge-blue">{item.orderNum}</span></td>
+                          <td>{item.product} {item.color}</td>
+                          <td style={{textAlign:'center'}}>{item.size}</td>
+                          <td style={{textAlign:'center'}}>{item.qty}</td>
+                          <td style={{textAlign:'center'}}>{item.unitPrice}</td>
+                          <td style={{fontWeight:500,textAlign:'right'}}>{fmtN(item.amount)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{background:'#f5f0e0',fontWeight:600}}>
+                        <td colSpan={6} style={{textAlign:'right',paddingRight:14}}>本月合計</td>
+                        <td style={{fontSize:14,color:'#c0392b',textAlign:'right'}}>{fmtN(md.total)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {idx<monthsData.length-1&&<div style={{height:2,background:'#e2e8f0',margin:'12px 0'}}/>}
+              </div>
+            ))}
+            <div style={{textAlign:'right',fontWeight:700,fontSize:16,padding:'12px 4px',borderTop:'2px solid #1a2744',marginTop:4}}>
+              {activeSel.length>1&&<span style={{marginRight:16,fontSize:13,color:'#64748b'}}>{activeSel.length} 個月份</span>}
+              總計：<span style={{color:'#c0392b',fontSize:18}}>NT$ {fmtN(grandTotal)}</span>
+            </div>
           </div>
-        )):<div className="empty">請選擇篩選條件以查看對帳資料</div>}
+        ):cid?<div className="empty">請勾選月份以查看對帳資料</div>:<div className="empty">請先選擇客戶</div>}
       </div>
     </div>
   );
@@ -2430,7 +2603,6 @@ function App(){
     if(!confirm('確定刪除此銷貨單？'))return;
     const u=orders.filter(o=>o.id!==id);setOrders(u);DB.save('yl-orders-v4',u);
   };
-  const handleExport=(order,cust,showPrices,fmt)=>{exportHTML(order,cust,showPrices);};
 
   const months=[...new Set(orders.map(o=>toROCM(o.date)))].sort().reverse();
   const allYears=[...new Set(months.map(m=>m.split('-')[0]))].sort().reverse();
@@ -2506,7 +2678,7 @@ function App(){
                     <div style={{overflowX:'auto'}}>
                       <table className="data">
                         <thead><tr><th>銷貨單號</th><th>客戶名稱</th><th>日期</th><th>項目數</th><th>金額（NT$）</th><th>操作</th></tr></thead>
-                        <tbody>{filtOrders.map(o=><OrderRow key={o.id} order={o} customers={customers} onDelete={delOrder} onExport={handleExport} onEdit={setEditOrder} canManage={loggedIn} isAdmin={isAdmin}/>)}</tbody>
+                        <tbody>{filtOrders.map(o=><OrderRow key={o.id} order={o} customers={customers} onDelete={delOrder} onEdit={setEditOrder} canManage={loggedIn} isAdmin={isAdmin}/>)}</tbody>
                       </table>
                     </div>
                   ):(
