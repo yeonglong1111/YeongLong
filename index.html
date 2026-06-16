@@ -807,7 +807,7 @@ function printDoc(order,cust,showPrices){
 }
 
 /* ===== NEW ORDER MODAL ===== */
-function NewOrderModal({customers,prices,products,colors,onSave,onClose}){
+function NewOrderModal({customers,prices,products,colors,colorSurcharge={},onSave,onClose}){
   const[cid,setCid]=useState(customers[0]?.id||'');
   const[date,setDate]=useState(today());
   const[items,setItems]=useState([]);
@@ -823,10 +823,10 @@ function NewOrderModal({customers,prices,products,colors,onSave,onClose}){
     if(PCAT[name])return true;
     return p?p.perCm!==false:false;
   };
-  const getPrice=(custName,productName)=>{
+  const getPrice=(custName,productName,color)=>{
     const p=products.find(x=>x.name===productName);
     const cat=p?.priceCat||PCAT[productName];
-    if(cat)return(prices[custName]||STD)[cat]||0;
+    if(cat)return((prices[custName]||STD)[cat]||0)+(colorSurcharge[color]||0);
     return p?.defaultPrice||0;
   };
 
@@ -837,9 +837,10 @@ function NewOrderModal({customers,prices,products,colors,onSave,onClose}){
 
   useEffect(()=>{
     if(cust){
-      const up=getPrice(cust.name,defProd);
+      const color=(colors||COLORS)[0]||'白';
+      const up=getPrice(cust.name,defProd,color);
       const amt=isPerCm(defProd)?Math.round(160*1*up):Math.round(1*up);
-      const initItem=isPerCm(defProd)?{id:uid(),product:defProd,color:(colors||COLORS)[0]||'白',size:160,qty:1,unitPrice:up,amount:amt}:{id:uid(),product:defProd,color:'',size:0,qty:1,unitPrice:up,amount:amt};
+      const initItem=isPerCm(defProd)?{id:uid(),product:defProd,color,size:160,qty:1,unitPrice:up,amount:amt}:{id:uid(),product:defProd,color:'',size:0,qty:1,unitPrice:up,amount:amt};
       setItems([initItem]);
     }
   },[]);
@@ -849,9 +850,11 @@ function NewOrderModal({customers,prices,products,colors,onSave,onClose}){
       const arr=[...prev];
       const updated={...arr[idx],[field]:['size','qty','amount','unitPrice'].includes(field)?Number(val)||0:val};
       if(field==='product'){
-        updated.unitPrice=getPrice(cust.name,val);
         if(isPerCm(val)){updated.size=updated.size||160;updated.color=updated.color||(colors||COLORS)[0]||'白';}
         else{updated.size=0;updated.qty=updated.qty||1;}
+        updated.unitPrice=getPrice(cust.name,val,updated.color);
+      } else if(field==='color'){
+        updated.unitPrice=getPrice(cust.name,updated.product,val);
       }
       if(field!=='amount')updated.amount=calcAmt(updated);
       arr[idx]=updated;
@@ -860,8 +863,9 @@ function NewOrderModal({customers,prices,products,colors,onSave,onClose}){
   };
 
   const addItem=()=>{
-    const up=getPrice(cust.name,defProd);
-    const newItem={id:uid(),product:defProd,color:(colors||COLORS)[0]||'白',size:isPerCm(defProd)?160:0,qty:1,unitPrice:up};
+    const color=(colors||COLORS)[0]||'白';
+    const up=getPrice(cust.name,defProd,color);
+    const newItem={id:uid(),product:defProd,color,size:isPerCm(defProd)?160:0,qty:1,unitPrice:up};
     setItems(prev=>[...prev,{...newItem,amount:calcAmt(newItem)}]);
   };
 
@@ -872,7 +876,7 @@ function NewOrderModal({customers,prices,products,colors,onSave,onClose}){
     setCid(v);
     const newCust=customers.find(c=>c.id===v);
     if(newCust)setItems(prev=>prev.map(item=>{
-      const up=getPrice(newCust.name,item.product);
+      const up=getPrice(newCust.name,item.product,item.color);
       const updated={...item,unitPrice:up};
       return{...updated,amount:calcAmt(updated)};
     }));
@@ -981,7 +985,7 @@ function NewOrderModal({customers,prices,products,colors,onSave,onClose}){
 }
 
 /* ===== EDIT ORDER MODAL ===== */
-function EditOrderModal({order,customers,prices,products,colors,onUpdate,onClose}){
+function EditOrderModal({order,customers,prices,products,colors,colorSurcharge={},onUpdate,onClose}){
   const[cid,setCid]=useState(order.customerId);
   const[date,setDate]=useState(order.date);
   const[items,setItems]=useState(order.items||[]);
@@ -997,10 +1001,10 @@ function EditOrderModal({order,customers,prices,products,colors,onUpdate,onClose
     if(PCAT[name])return true;
     return p?p.perCm!==false:false;
   };
-  const getPrice=(custName,productName)=>{
+  const getPrice=(custName,productName,color)=>{
     const p=products.find(x=>x.name===productName);
     const cat=p?.priceCat||PCAT[productName];
-    if(cat)return(prices[custName]||STD)[cat]||0;
+    if(cat)return((prices[custName]||STD)[cat]||0)+(colorSurcharge[color]||0);
     return p?.defaultPrice||0;
   };
   const calcAmt=(item)=>{
@@ -1013,9 +1017,11 @@ function EditOrderModal({order,customers,prices,products,colors,onUpdate,onClose
       const arr=[...prev];
       const updated={...arr[idx],[field]:['size','qty','amount','unitPrice'].includes(field)?Number(val)||0:val};
       if(field==='product'){
-        updated.unitPrice=getPrice(cust?.name||'',val);
         if(isPerCm(val)){updated.size=updated.size||160;updated.color=updated.color||(colors||COLORS)[0]||'白';}
         else{updated.size=0;updated.qty=updated.qty||1;}
+        updated.unitPrice=getPrice(cust?.name||'',val,updated.color);
+      } else if(field==='color'){
+        updated.unitPrice=getPrice(cust?.name||'',updated.product,val);
       }
       if(field!=='amount')updated.amount=calcAmt(updated);
       arr[idx]=updated;
@@ -1024,8 +1030,9 @@ function EditOrderModal({order,customers,prices,products,colors,onUpdate,onClose
   };
 
   const addItem=()=>{
-    const up=getPrice(cust?.name||'',defProd);
-    const newItem={id:uid(),product:defProd,color:(colors||COLORS)[0]||'白',size:isPerCm(defProd)?160:0,qty:1,unitPrice:up};
+    const color=(colors||COLORS)[0]||'白';
+    const up=getPrice(cust?.name||'',defProd,color);
+    const newItem={id:uid(),product:defProd,color,size:isPerCm(defProd)?160:0,qty:1,unitPrice:up};
     setItems(prev=>[...prev,{...newItem,amount:calcAmt(newItem)}]);
   };
 
@@ -2167,7 +2174,7 @@ function LoginModal({onLogin,onClose}){
 }
 
 /* ===== SETTINGS ===== */
-function SettingsView({customers,setCustomers,suppliers=[],setSuppliers,prices,setPrices,costs,setCosts,products,setProducts,colors,setColors,onLogout,isAdmin=true}){
+function SettingsView({customers,setCustomers,suppliers=[],setSuppliers,prices,setPrices,costs,setCosts,products,setProducts,colors,setColors,colorSurcharge={},setColorSurcharge,onLogout,isAdmin=true}){
   const[tab,setTab]=useState('customers');
   const[newC,setNewC]=useState({name:'',contact:'',phone:'',address:''});
   const[newS,setNewS]=useState({name:'',contact:'',phone:'',address:''});
@@ -2268,6 +2275,10 @@ function SettingsView({customers,setCustomers,suppliers=[],setSuppliers,prices,s
     if(idx+dir<0||idx+dir>=(colors||[]).length)return;
     const u=[...(colors||[])];[u[idx],u[idx+dir]]=[u[idx+dir],u[idx]];
     setColors(u);DB.save('yl-colors',u);
+  };
+  const updColorSurcharge=(name,val)=>{
+    const u={...colorSurcharge,[name]:Number(val)||0};
+    setColorSurcharge(u);DB.save('yl-color-surcharge',u);
   };
   return(
     <div>
@@ -2445,13 +2456,13 @@ function SettingsView({customers,setCustomers,suppliers=[],setSuppliers,prices,s
       {tab==='colors'&&(
         <div className="card" style={{maxWidth:520}}>
           <div className="card-title">顏色管理</div>
-          <div className="print-hint">💡 新增後會同步到銷貨單顏色下拉選單；可調整順序</div>
+          <div className="print-hint">💡 新增後會同步到銷貨單顏色下拉選單；可調整順序。加價會在選擇該顏色時自動加到單價上（標準色留 0 即可）</div>
           <div style={{display:'flex',gap:8,marginBottom:14,alignItems:'center'}}>
             <input placeholder="輸入顏色名稱" style={{width:160}} value={newColor} onChange={e=>setNewColor(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addColor()}/>
             <button className="btn btn-primary" onClick={addColor}>＋ 新增</button>
           </div>
-          <table className="data" style={{maxWidth:360}}>
-            <thead><tr><th style={{width:72,textAlign:'center'}}>順序</th><th>顏色名稱</th><th style={{width:70,textAlign:'center'}}>操作</th></tr></thead>
+          <table className="data" style={{maxWidth:460}}>
+            <thead><tr><th style={{width:72,textAlign:'center'}}>順序</th><th>顏色名稱</th><th style={{width:110,textAlign:'center'}}>加價(NT$/cm)</th><th style={{width:70,textAlign:'center'}}>操作</th></tr></thead>
             <tbody>
               {(colors||[]).map((c,idx)=>(
                 <tr key={c}>
@@ -2460,6 +2471,9 @@ function SettingsView({customers,setCustomers,suppliers=[],setSuppliers,prices,s
                     <button className="btn btn-sm" style={{padding:'2px 7px'}} disabled={idx===(colors||[]).length-1} onClick={()=>moveColor(idx,1)}>▼</button>
                   </td>
                   <td style={{fontWeight:500}}>{c}</td>
+                  <td style={{textAlign:'center'}}>
+                    <input type="number" step="0.1" style={{width:80,textAlign:'center'}} placeholder="0" value={colorSurcharge[c]||''} onChange={e=>updColorSurcharge(c,e.target.value)}/>
+                  </td>
                   <td style={{textAlign:'center'}}>
                     <button className="btn btn-sm btn-danger" onClick={()=>delColor(c)}>刪除</button>
                   </td>
@@ -2530,6 +2544,7 @@ function App(){
   const[costs,setCosts]=useState(INIT_COSTS);
   const[products,setProducts]=useState(INIT_PRODS);
   const[colors,setColors]=useState(COLORS);
+  const[colorSurcharge,setColorSurcharge]=useState({});
   const[receivables,setReceivables]=useState({});
   const[manualRec,setManualRec]=useState([]);
   const[purchases,setPurchases]=useState([]);
@@ -2596,11 +2611,12 @@ function App(){
       });
       if(ordNeedSave)DB.save('yl-orders-v4',o);
       const cl=await DB.load('yl-colors',COLORS);
+      const cs=await DB.load('yl-color-surcharge',{});
       const rv=await DB.load('yl-receivables',{});
       const mr=await DB.load('yl-manual-rec',[]);
       const pu=await DB.load('yl-purchases',INIT_PURCHASES);
       const su=await DB.load('yl-suppliers',[]);
-      setOrders(o);setCustomers(c);setPrices(p);setCosts(cc);setProducts(pp);setColors(cl);setReceivables(rv);setManualRec(mr);setPurchases(pu);setSuppliers(su);setLoaded(true);
+      setOrders(o);setCustomers(c);setPrices(p);setCosts(cc);setProducts(pp);setColors(cl);setColorSurcharge(cs);setReceivables(rv);setManualRec(mr);setPurchases(pu);setSuppliers(su);setLoaded(true);
     })();
   },[]);
 
@@ -2706,10 +2722,10 @@ function App(){
             {tab==='statement'&&<StatementView orders={orders} customers={customers} prices={prices}/>}
             {tab==='monthly'&&<MonthlyReport orders={orders} customers={customers} costs={costs} purchases={purchases} receivables={receivables} manualRec={manualRec}/>}
             {tab==='receivables'&&<ReceivablesView orders={orders} customers={customers} receivables={receivables} setReceivables={setReceivables} manualRec={manualRec} setManualRec={setManualRec}/>}
-            {tab==='settings'&&<SettingsView customers={customers} setCustomers={setCustomers} suppliers={suppliers} setSuppliers={setSuppliers} prices={prices} setPrices={setPrices} costs={costs} setCosts={setCosts} products={products} setProducts={setProducts} colors={colors} setColors={setColors} onLogout={logout} isAdmin={isAdmin}/>}
+            {tab==='settings'&&<SettingsView customers={customers} setCustomers={setCustomers} suppliers={suppliers} setSuppliers={setSuppliers} prices={prices} setPrices={setPrices} costs={costs} setCosts={setCosts} products={products} setProducts={setProducts} colors={colors} setColors={setColors} colorSurcharge={colorSurcharge} setColorSurcharge={setColorSurcharge} onLogout={logout} isAdmin={isAdmin}/>}
           </div>
-          {showNew&&<NewOrderModal customers={customers} prices={prices} products={products} colors={colors} onSave={saveOrder} onClose={()=>setShowNew(false)}/>}
-          {editOrder&&<EditOrderModal order={editOrder} customers={customers} prices={prices} products={products} colors={colors} onUpdate={updateOrder} onClose={()=>setEditOrder(null)}/>}
+          {showNew&&<NewOrderModal customers={customers} prices={prices} products={products} colors={colors} colorSurcharge={colorSurcharge} onSave={saveOrder} onClose={()=>setShowNew(false)}/>}
+          {editOrder&&<EditOrderModal order={editOrder} customers={customers} prices={prices} products={products} colors={colors} colorSurcharge={colorSurcharge} onUpdate={updateOrder} onClose={()=>setEditOrder(null)}/>}
         </>
     </div>
   );
