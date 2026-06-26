@@ -7,6 +7,8 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:"Microsoft JhengHei","PingFang TC","Noto Sans CJK TC",sans-serif;font-size:13px;background:#f4f6f9;color:#2d2d2d;min-height:100vh}
@@ -8155,6 +8157,236 @@ function PasswordTab({
   }, "設定員工密碼")));
 }
 
+/* ===== BATCH EXPORT VIEW ===== */
+function BatchExportView({orders, customers}) {
+  const [status,    setStatus]    = useState('');
+  const [progCur,   setProgCur]   = useState(0);
+  const [progTotal, setProgTotal] = useState(0);
+  const [selMonth,  setSelMonth]  = useState('');
+  const [running,   setRunning]   = useState(false);
+
+  const CN_MONTHS = ['','一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
+  const getM  = iso => new Date(iso + 'T00:00:00').getMonth() + 1;
+  const getMM = iso => String(new Date(iso + 'T00:00:00').getMonth() + 1).padStart(2,'0');
+  const getDD = iso => String(new Date(iso + 'T00:00:00').getDate()).padStart(2,'0');
+
+  const allMonths = [...new Set(orders.map(o => getMM(o.date)))].sort();
+
+  // 將列印 HTML 中的 setTimeout(print) 替換為 html2canvas 截圖 → postMessage 回傳給父視窗
+  function addCaptureScript(printHtml, msgId) {
+    const code = '(function(){' +
+      'var s=document.createElement("script");' +
+      's.src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";' +
+      's.onload=async function(){' +
+        'var pages=document.querySelectorAll("#out .page");' +
+        'var imgs=[];' +
+        'for(var i=0;i<pages.length;i++){' +
+          'var c=await html2canvas(pages[i],{scale:2,useCORS:true,logging:false,backgroundColor:"#ffffff"});' +
+          'imgs.push(c.toDataURL("image/jpeg",0.92));' +
+        '}' +
+        'window.parent.postMessage({type:"ylPdf",id:"' + msgId + '",imgs:imgs},"*");' +
+      '};' +
+      'document.head.appendChild(s);' +
+    '})();';
+    return printHtml.replace(/setTimeout\(function\(\)\{window\.print\(\);\},\d+\);/g, code);
+  }
+
+  // 在 iframe 中渲染列印 HTML，接收 postMessage 後組裝為 PDF blob
+  function renderToPdf(captureHtml, msgId) {
+    const { jsPDF } = window.jspdf;
+    return new Promise((resolve, reject) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'position:fixed;top:0;left:0;width:820px;height:600px;border:none;opacity:0.001;z-index:-9999;pointer-events:none;';
+      document.body.appendChild(iframe);
+      let done = false;
+      const cleanup = () => { try { document.body.removeChild(iframe); } catch(_){} };
+      const timer = setTimeout(() => {
+        if (done) return; done = true;
+        window.removeEventListener('message', handler);
+        cleanup(); reject(new Error('timeout'));
+      }, 30000);
+      const handler = async evt => {
+        if (!evt.data || evt.data.type !== 'ylPdf' || evt.data.id !== msgId) return;
+        if (done) return; done = true;
+        window.removeEventListener('message', handler);
+        clearTimeout(timer); cleanup();
+        try {
+          const imgs = evt.data.imgs || [];
+          if (!imgs.length) { resolve(null); return; }
+          const pdf = new jsPDF({ orientation: 'l', unit: 'mm', format: [214, 140] });
+          imgs.forEach((img, i) => {
+            if (i > 0) pdf.addPage([214, 140], 'l');
+            pdf.addImage(img, 'JPEG', 0, 0, 214, 140);
+          });
+          resolve(pdf.output('blob'));
+        } catch(e) { reject(e); }
+      };
+      window.addEventListener('message', handler);
+      const iDoc = iframe.contentDocument;
+      iDoc.open(); iDoc.write(captureHtml); iDoc.close();
+    });
+  }
+
+  async function doExport(type) {
+    if (typeof window.jspdf === 'undefined') return alert('jsPDF 尚未載入，請重整頁面');
+    if (typeof JSZip  === 'undefined') return alert('JSZip 尚未載入，請重整頁面');
+    setRunning(true); setStatus(''); setProgCur(0); setProgTotal(0);
+
+    const filteredOrders = selMonth ? orders.filter(o => getMM(o.date) === selMonth) : orders;
+    let items = [];
+
+    if (type === 'orders') {
+      filteredOrders.forEach(o => {
+        const cust = customers.find(c => c.id === o.customerId); if (!cust) return;
+        items.push({
+          folder: CN_MONTHS[getM(o.date)],
+          filename: `${cust.name}${getMM(o.date)}${getDD(o.date)}.pdf`,
+          getHtml: () => genPrintHTML(o, cust, true)
+        });
+      });
+    } else {
+      const seen = {};
+      filteredOrders.forEach(o => { seen[o.customerId + '\x00' + toROCM(o.date)] = true; });
+      Object.keys(seen).forEach(key => {
+        const sep = key.indexOf('\x00'), custId = key.slice(0, sep), rocM = key.slice(sep + 1);
+        const cust = customers.find(c => c.id === custId); if (!cust) return;
+        const mNum = parseInt(rocM.split('-')[1], 10);
+        const custOrds = filteredOrders.filter(o => o.customerId === custId && toROCM(o.date) === rocM);
+        const itemsList = [];
+        custOrds.forEach(o => {
+          (o.items || []).forEach(it => itemsList.push({...it, orderDate: o.date, orderNum: o.orderNumber}));
+          if (o.shipping > 0) itemsList.push({ orderDate: o.date, orderNum: o.orderNumber, product: '運費', color: '', size: '', qty: 1, unitPrice: '', amount: o.shipping });
+        });
+        const monthsData = [{ month: rocM, items: itemsList, total: itemsList.reduce((s, i) => s + (i.amount || 0), 0) }];
+        items.push({
+          folder: CN_MONTHS[mNum],
+          filename: `${cust.name}${mNum}月請款單.pdf`,
+          getHtml: () => genMultiStmtHTML(monthsData, cust)
+        });
+      });
+    }
+
+    if (!items.length) { setRunning(false); return alert('沒有符合條件的資料'); }
+    setProgTotal(items.length);
+
+    const zip = new JSZip();
+    let ok = 0, fail = 0;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      setStatus(`⏳ 產生中：${item.filename}（${i + 1}/${items.length}）`);
+      try {
+        const msgId = uid();
+        const blob  = await renderToPdf(addCaptureScript(item.getHtml(), msgId), msgId);
+        if (blob) { zip.folder(item.folder).file(item.filename, blob); ok++; }
+        else fail++;
+      } catch(e) { console.warn('PDF error:', item.filename, e.message); fail++; }
+      setProgCur(i + 1);
+    }
+
+    const mLabel  = selMonth ? CN_MONTHS[parseInt(selMonth, 10)] : '全部月份';
+    const zipName = `勇龍_${type === 'orders' ? '銷貨單' : '請款單'}_${mLabel}.zip`;
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(zipBlob); a.download = zipName; a.click();
+    setRunning(false); setProgCur(0); setProgTotal(0);
+    setStatus(`✅ 完成！成功 ${ok} 份${fail ? `，${fail} 份失敗` : ''}，已下載 ${zipName}`);
+  }
+
+  const byMonth = {};
+  orders.forEach(o => {
+    const m = getMM(o.date);
+    if (!byMonth[m]) byMonth[m] = { orders: [], custs: new Set() };
+    byMonth[m].orders.push(o); byMonth[m].custs.add(o.customerId);
+  });
+  const months = Object.keys(byMonth).sort();
+  const pct = progTotal > 0 ? Math.round(progCur / progTotal * 100) : 0;
+
+  return React.createElement('div', null,
+    React.createElement('div', { className: 'card' },
+      React.createElement('div', { className: 'card-title' }, '📥 批次匯出 PDF'),
+      React.createElement('div', { className: 'print-hint' },
+        '💡 系統逐一開啟文件、截圖並產生 PDF，再打包成 ZIP 下載。每份約需 3-8 秒，請耐心等候。',
+        React.createElement('br', null),
+        '📁 ZIP 解壓縮後可看到各月份資料夾（五月/、六月/…），PDF 可直接開啟、列印或存檔。'
+      ),
+      React.createElement('div', { style: { display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 14, flexWrap: 'wrap' } },
+        React.createElement('div', null,
+          React.createElement('label', { style: { display: 'block', fontSize: 11, color: '#666', marginBottom: 4 } }, '選擇月份'),
+          React.createElement('select', {
+            value: selMonth,
+            onChange: e => setSelMonth(e.target.value),
+            style: { padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', width: 148 },
+            disabled: running
+          },
+            React.createElement('option', { value: '' }, '— 全部月份 —'),
+            allMonths.map(m => React.createElement('option', { key: m, value: m },
+              CN_MONTHS[parseInt(m, 10)] + '　(' + parseInt(m, 10) + '月)'))
+          )
+        ),
+        React.createElement('button', {
+          className: 'btn btn-primary',
+          onClick: () => doExport('orders'),
+          disabled: running || !orders.length,
+          style: { fontSize: 13, padding: '7px 16px' }
+        }, running ? '⏳ 匯出中...' : '📋 匯出銷貨單 PDF'),
+        React.createElement('button', {
+          className: 'btn btn-gold',
+          onClick: () => doExport('statements'),
+          disabled: running || !orders.length,
+          style: { fontSize: 13, padding: '7px 16px' }
+        }, running ? '⏳ 匯出中...' : '💰 匯出請款單 PDF')
+      ),
+      progTotal > 0 && React.createElement('div', { style: { marginBottom: 10 } },
+        React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#666', marginBottom: 4 } },
+          React.createElement('span', null, `進度 ${progCur} / ${progTotal}`),
+          React.createElement('span', null, pct + '%')
+        ),
+        React.createElement('div', { style: { width: '100%', height: 8, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' } },
+          React.createElement('div', { style: { width: pct + '%', height: '100%', background: '#1a2744', borderRadius: 4, transition: 'width .3s' } })
+        )
+      ),
+      status && React.createElement('div', {
+        style: {
+          padding: '8px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, marginTop: 4,
+          background: status.startsWith('✅') ? '#eaf3de' : status.startsWith('❌') ? '#fdf2f2' : '#f8fafd',
+          color: status.startsWith('✅') ? '#3b6d11' : status.startsWith('❌') ? '#c0392b' : '#555',
+          border: `1px solid ${status.startsWith('✅') ? '#b8dfa0' : status.startsWith('❌') ? '#f0c0c0' : '#dde3ec'}`
+        }
+      }, status)
+    ),
+    React.createElement('div', { className: 'card' },
+      React.createElement('div', { className: 'card-title' }, '📊 各月份資料概覽'),
+      months.length === 0
+        ? React.createElement('div', { className: 'empty' }, '尚無銷貨資料')
+        : React.createElement('table', { className: 'data' },
+            React.createElement('thead', null,
+              React.createElement('tr', null,
+                ['月份', '銷貨單數', '客戶數', '銷貨單 PDF 範例', '請款單 PDF 範例'].map(h =>
+                  React.createElement('th', { key: h }, h))
+              )
+            ),
+            React.createElement('tbody', null,
+              months.map(m => {
+                const d = byMonth[m];
+                const sO = d.orders[0];
+                const sC = sO ? customers.find(c => c.id === sO.customerId) : null;
+                const isActive = !selMonth || selMonth === m;
+                return React.createElement('tr', { key: m, style: { opacity: isActive ? 1 : 0.35 } },
+                  React.createElement('td', null, React.createElement('b', null, CN_MONTHS[parseInt(m, 10)] + '/')),
+                  React.createElement('td', null, d.orders.length + ' 張'),
+                  React.createElement('td', null, d.custs.size + ' 家'),
+                  React.createElement('td', null,
+                    sC ? React.createElement('span', { style: { color: '#0c447c' } }, `${sC.name}${m}${getDD(sO.date)}.pdf`) : '—'),
+                  React.createElement('td', null,
+                    sC ? React.createElement('span', { style: { color: '#854f0b' } }, `${sC.name}${parseInt(m, 10)}月請款單.pdf`) : '—')
+                );
+              })
+            )
+          )
+    )
+  );
+}
+
 /* ===== MAIN APP ===== */
 function App() {
   const [loaded, setLoaded] = useState(false);
@@ -8197,8 +8429,8 @@ function App() {
       setLoginPw('');
     }
   };
-  const PROTECTED_TABS = ['purchase', 'statement', 'monthly', 'receivables', 'settings'];
-  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['monthly', '📈 月銷售報表'], ['settings', '⚙️ 設定']];
+  const PROTECTED_TABS = ['purchase', 'statement', 'monthly', 'receivables', 'export', 'settings'];
+  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['monthly', '📈 月銷售報表'], ['export', '📥 批次匯出'], ['settings', '⚙️ 設定']];
   const visibleTabs = loggedIn ? ALL_TABS : [['orders', '📋 銷貨單管理']];
   useEffect(() => {
     (async () => {
@@ -8535,6 +8767,9 @@ function App() {
     setReceivables: setReceivables,
     manualRec: manualRec,
     setManualRec: setManualRec
+  }), tab === 'export' && /*#__PURE__*/React.createElement(BatchExportView, {
+    orders: orders,
+    customers: customers
   }), tab === 'settings' && /*#__PURE__*/React.createElement(SettingsView, {
     customers: customers,
     setCustomers: setCustomers,
