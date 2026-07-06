@@ -4,11 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>勇龍有限公司 銷貨管理系統</title>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:"Microsoft JhengHei","PingFang TC","Noto Sans CJK TC",sans-serif;font-size:13px;background:#f4f6f9;color:#2d2d2d;min-height:100vh}
@@ -74,7 +69,11 @@ table.data tr:hover td{background:#f8fafd}
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div id="init-loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:Microsoft JhengHei,sans-serif;color:#1a2744"><div style="width:36px;height:36px;border:3px solid #dde3ec;border-top-color:#1a2744;border-radius:50%;animation:ld-spin .8s linear infinite;margin-bottom:14px"></div><div style="font-size:14px;color:#666">載入中…</div></div></div>
+<style>@keyframes ld-spin{to{transform:rotate(360deg)}}</style>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 const {
   useState,
@@ -3738,38 +3737,88 @@ const SUPA_URL = 'https://akzdbdcutvolydlhjoug.supabase.co';
 const SUPA_KEY = 'sb_publishable_aGTsFRXyJgTHiSkQFVqzNA_JsG1h7LP';
 const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 const DB = {
+  _loaded: new Set(),
   load: async (k, d) => {
     try {
-      const {
-        data
-      } = await supa.from('store').select('value').eq('key', k).maybeSingle();
-      return data ? data.value : d;
-    } catch {
+      const { data, error } = await supa.from('store').select('value').eq('key', k).maybeSingle();
+      if (error) {
+        console.warn('[DB load error]', k, error.message);
+        const local = localStorage.getItem('ylbk_' + k);
+        if (local) { DB._loaded.add(k); console.info('[DB] 使用本機備份:', k); return JSON.parse(local); }
+        return d;
+      }
+      const val = data ? data.value : d;
+      try { localStorage.setItem('ylbk_' + k, JSON.stringify(val)); } catch(_) {}
+      DB._loaded.add(k);
+      return val;
+    } catch(e) {
+      console.warn('[DB load catch]', k, e.message);
+      const local = localStorage.getItem('ylbk_' + k);
+      if (local) { DB._loaded.add(k); console.info('[DB] 使用本機備份:', k); return JSON.parse(local); }
       return d;
     }
   },
   save: (k, v) => {
+    if (!DB._loaded.has(k)) {
+      console.warn('[DB save blocked]', k);
+      alert('⚠️ 資料尚未從伺服器讀取完成，無法儲存，避免覆蓋現有資料。\n請重新整理頁面後再試。');
+      return;
+    }
+    try { localStorage.setItem('ylbk_' + k, JSON.stringify(v)); } catch(_) {}
     supa.from('store').upsert({
-      key: k,
-      value: v,
-      updated_at: new Date().toISOString()
-    }).then(() => {}).catch(() => {});
-  }
+      key: k, value: v, updated_at: new Date().toISOString()
+    }).then(({ error }) => {
+      if (error) {
+        console.error('[DB save error]', k, error.message, error.code);
+        if (error.code === '42501' || error.message.includes('policy') || error.message.includes('permission')) {
+          alert('⚠️ 儲存失敗：資料庫權限不足。\n請聯絡系統管理員設定 Supabase RLS 權限。\n\n錯誤：' + error.message);
+        } else {
+          alert('⚠️ 儲存失敗，請檢查網路連線。\n錯誤：' + error.message);
+        }
+      }
+    }).catch(e => { console.error('[DB save catch]', k, e.message); });
+  },
+  exportAll: () => {
+    const keys = ['yl-orders-v4','yl-customers-v4','yl-prices-v2','yl-costs','yl-products','yl-purchases','yl-receivables','yl-manual-rec','yl-colors','yl-color-surcharge','yl-suppliers'];
+    const backup = { exportedAt: new Date().toISOString(), version: 1, data: {} };
+    keys.forEach(k => { const v = localStorage.getItem('ylbk_' + k); if (v) try { backup.data[k] = JSON.parse(v); } catch(_) {} });
+    if (!Object.keys(backup.data).length) { alert('本機尚無快取資料，請先正常開啟一次 app 讓資料載入後再匯出。'); return; }
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = '勇龍備份_' + new Date().toISOString().slice(0,10) + '.json'; a.click();
+  },
+  importAll: (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const backup = JSON.parse(e.target.result);
+        const data = backup.data || {};
+        if (!Object.keys(data).length) { reject(new Error('備份檔案內無資料')); return; }
+        Object.entries(data).forEach(([k, v]) => {
+          localStorage.setItem('ylbk_' + k, JSON.stringify(v));
+          DB._loaded.add(k);
+          DB.save(k, v);
+        });
+        resolve(Object.keys(data).length);
+      } catch(err) { reject(err); }
+    };
+    reader.readAsText(file);
+  })
 };
 
 /* ===== L-TYPE PRINT SVG ===== */
 function genLPrintSvg(dir, a, b) {
   const c = {
-    '左下': {pts:'0,0 24,0 24,86 150,86 150,110 0,110',  bx:12, by:43, ax:87, ay:98},
-    '左上': {pts:'0,0 150,0 150,24 24,24 24,110 0,110',   bx:12, by:67, ax:87, ay:12},
-    '右下': {pts:'0,86 0,110 150,110 150,0 126,0 126,86', bx:138, by:43, ax:63, ay:98},
-    '右上': {pts:'0,0 150,0 150,110 126,110 126,24 0,24', bx:138, by:67, ax:63, ay:12}
+    '左下': {pts:'0,0 15,0 15,50 90,50 90,65 0,65', bx:7, by:25, ax:52, ay:58},
+    '左上': {pts:'0,0 90,0 90,15 15,15 15,65 0,65',  bx:7, by:40, ax:52, ay:7},
+    '右下': {pts:'0,50 0,65 90,65 90,0 75,0 75,50',  bx:82, by:25, ax:37, ay:58},
+    '右上': {pts:'0,0 90,0 90,65 75,65 75,15 0,15',  bx:82, by:40, ax:37, ay:7}
   };
   const s = c[dir] || c['左下'];
-  return '<svg width="150" height="110" style="display:block">'
-    + '<polygon points="' + s.pts + '" fill="#c8dff8" stroke="#1a4d8f" stroke-width="2"/>'
-    + '<text x="' + s.bx + '" y="' + (s.by + 4) + '" text-anchor="middle" transform="rotate(-90,' + s.bx + ',' + s.by + ')" fill="#000" font-size="11" font-weight="bold">' + (b || 0) + 'cm</text>'
-    + '<text x="' + s.ax + '" y="' + (s.ay + 4) + '" text-anchor="middle" fill="#000" font-size="11" font-weight="bold">' + (a || 0) + 'cm</text>'
+  return '<svg width="90" height="65" style="display:block">'
+    + '<polygon points="' + s.pts + '" fill="#c8dff8" stroke="#1a4d8f" stroke-width="1.5"/>'
+    + '<text x="' + s.bx + '" y="' + (s.by + 3) + '" text-anchor="middle" transform="rotate(-90,' + s.bx + ',' + s.by + ')" fill="#1a4d8f" font-size="9" font-weight="bold">B=' + (b || 0) + 'cm</text>'
+    + '<text x="' + s.ax + '" y="' + (s.ay + 3) + '" text-anchor="middle" fill="#c0392b" font-size="9" font-weight="bold">A=' + (a || 0) + 'cm</text>'
     + '</svg>';
 }
 
@@ -3800,9 +3849,9 @@ function genPrintHTML(order, cust, showPrices) {
   const chH = `<th style="width:4%">No.</th>${showPrices ? '<th style="width:9%">訂購日期</th>' : ''}<th style="${showPrices ? 'width:29%' : 'width:38%'};text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:12%">金額</th><th style="width:14%">備註</th>`;
   const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}</div><div>電話：${COMPANY.tel}　　Line ID：${COMPANY.line}</div></div>`;
   const signH = showPrices ? `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${fmtN(total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>` : `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="2" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>`;
-  const lItems = !showPrices ? items.filter(it => it.product && it.product.includes('L型') && it.lDir) : [];
-  const noteH = order.note ? `<tr><td colspan="${cols}" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000"><strong>備註：</strong>${order.note}</td></tr>` : '';
-  const ldiagPageH = lItems.length ? '<div style="padding:8px 14px"><div style="font-size:13pt;font-weight:bold;margin-bottom:10px;border-bottom:1px solid #000;padding-bottom:4px">L型附件</div><div style="display:flex;flex-wrap:wrap;gap:20px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:10pt;font-weight:bold;margin-bottom:3px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:9pt;margin-bottom:4px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB) + '</div>').join('') + '</div></div>' : '';
+  const lItems = items.filter(it => it.product && it.product.includes('L型') && it.lDir);
+  const lDiagH = lItems.length ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:14px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:9pt;font-weight:bold;margin-bottom:2px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:9pt;color:#555;margin-bottom:3px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB) + '</div>').join('') + '</div>' : '';
+  const noteH = (order.note || lDiagH) ? `<tr><td colspan="${cols}" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000"><strong>備註：</strong>${order.note || ''}${lDiagH}</td></tr>` : '';
   const measRows = rowsData.map(tds => `<tr class="dr">${tds}</tr>`).join('');
   // 安全地嵌入 JSON，將 / 替換為 \/ 防止字串中出現 script 結束標籤
   const D = JSON.stringify({
@@ -3813,7 +3862,6 @@ function genPrintHTML(order, cust, showPrices) {
     ftr: ftrH,
     sign: signH,
     note: noteH,
-    ldiag: ldiagPageH,
     title
   }).replace(/\//g, '\\/');
   const css = `@page{size:21.4cm 14cm;margin:5mm}
@@ -3886,25 +3934,16 @@ window.onload=function(){
     var tp=pages.length;
     var out=document.getElementById('out');
     out.innerHTML='';
-    var hasLdiag=!!(D.ldiag&&D.ldiag.length>0);
-    var totalPages=tp+(hasLdiag?1:0);
     for(var p=0;p<tp;p++){
-      var pr=pages[p];
-      var pg=totalPages>1?'　<span class="pg">(第'+(p+1)+'頁/共'+totalPages+'頁)</span>':'';
+      var pr=pages[p];var isLast=p===tp-1;
+      var pg=tp>1?'　<span class="pg">(第'+(p+1)+'頁/共'+tp+'頁)</span>':'';
       var rows='';for(var k=0;k<pr.length;k++)rows+='<tr class="dr">'+D.r[pr[k]]+'</tr>';
       var div=document.createElement('div');
-      div.className='page'+((!hasLdiag&&p===tp-1)?' last':'');
+      div.className='page'+(isLast?' last':'');
       div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
-        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(p===tp-1?D.note+D.sign:'')+'</tbody></table>'
+        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLast?D.note+D.sign:'')+'</tbody></table>'
         +D.ftr;
       out.appendChild(div);
-    }
-    if(hasLdiag){
-      var pg2=totalPages>1?'　<span class="pg">(第'+totalPages+'頁/共'+totalPages+'頁)</span>':'';
-      var ldiv=document.createElement('div');
-      ldiv.className='page last';
-      ldiv.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg2+'</div>'+D.ldiag+D.ftr;
-      out.appendChild(ldiv);
     }
   }
   // 迭代校正：量測實際渲染高度，超出就移最後一筆到下一頁
@@ -3912,7 +3951,7 @@ window.onload=function(){
     build();
     var divs=document.getElementById('out').querySelectorAll('.page');
     var changed=false;
-    for(var p=0;p<pages.length;p++){
+    for(var p=0;p<divs.length;p++){
       if(divs[p].offsetHeight>PH&&pages[p].length>1){
         var mv2=pages[p].pop();
         if(p+1>=pages.length)pages.push([mv2]);
@@ -5892,24 +5931,21 @@ function StatementView({
   prices
 }) {
   const [year, setYear] = useState(toROCM(today()).split('-')[0]);
+  const [filterMonth, setFilterMonth] = useState('');
   const [cid, setCid] = useState('');
-  const [selMonths, setSelMonths] = useState([]);
   const allMonths = [...new Set(orders.map(o => toROCM(o.date)))].sort().reverse();
   const allYears = [...new Set(allMonths.map(m => m.split('-')[0]))].sort().reverse();
   const yearMonths = allMonths.filter(m => !year || m.startsWith(year + '-'));
+  const activeCustomerIds = new Set(orders.filter(o => {
+    const m = toROCM(o.date);
+    if (year && !m.startsWith(year + '-')) return false;
+    if (filterMonth && m !== filterMonth) return false;
+    return true;
+  }).map(o => o.customerId));
+  const filteredCustomers = customers.filter(c => activeCustomerIds.has(c.id));
   const cust = customers.find(c => c.id === cid);
-
-  // 月份 checkbox 切換
-  const toggleM = m => setSelMonths(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m].sort());
-  const selectAll = () => setSelMonths([...yearMonths].sort());
-  const clearAll = () => setSelMonths([]);
-
-  // 有效選取月份（只考慮此客戶有資料的）
-  const activeSel = selMonths.filter(m => orders.some(o => o.customerId === cid && toROCM(o.date) === m));
-
-  // 每月資料
-  const getMonthData = m => {
-    const mos = orders.filter(o => o.customerId === cid && toROCM(o.date) === m);
+  const getMonthDataForCust = (customerId, m) => {
+    const mos = orders.filter(o => o.customerId === customerId && toROCM(o.date) === m);
     const items = [];
     mos.forEach(o => {
       (o.items || []).forEach(item => items.push({
@@ -5934,14 +5970,24 @@ function StatementView({
       total: items.reduce((s, i) => s + (i.amount || 0), 0)
     };
   };
-  const monthsData = activeSel.map(getMonthData);
-  const grandTotal = monthsData.reduce((s, m) => s + m.total, 0);
+  const getCustMonths = customerId => allMonths.filter(m => {
+    if (year && !m.startsWith(year + '-')) return false;
+    if (filterMonth && m !== filterMonth) return false;
+    return orders.some(o => o.customerId === customerId && toROCM(o.date) === m);
+  });
   const handlePrint = () => {
-    if (!cust) return alert('請先選擇客戶');
-    if (activeSel.length === 0) return alert('請至少勾選一個月份');
+    if (!cid) return alert('請先選擇客戶');
+    const custsToPrint = cid === 'ALL' ? filteredCustomers : (cust ? [cust] : []);
+    if (!custsToPrint.length) return alert('無客戶資料');
+    const parts = custsToPrint.map(c => {
+      const months = getCustMonths(c.id);
+      if (!months.length) return '';
+      return genMultiStmtHTML(months.map(m => getMonthDataForCust(c.id, m)), c);
+    }).filter(Boolean);
+    if (!parts.length) return alert('所選條件無對帳單資料');
     const w = window.open('', '_blank', 'width=820,height=800');
     if (!w) return;
-    w.document.write(genMultiStmtHTML(monthsData, cust));
+    w.document.write(parts.join('<div style="page-break-after:always"></div>'));
     w.document.close();
   };
   const rocML = m => {
@@ -5954,8 +6000,8 @@ function StatementView({
     className: "card-title"
   }, "對帳單 / 請款單"), /*#__PURE__*/React.createElement("div", {
     className: "print-hint"
-  }, "💡 選擇客戶後勾選月份（可多選），一次列印多月份對帳單，每月小計，最後顯示總計"), /*#__PURE__*/React.createElement("div", {
-    className: "form-grid g3",
+  }, "💡 選月份→客戶自動篩選；選「全部客戶」一次列印所有客戶；選「全部月份」則列印該年度所有月份"), /*#__PURE__*/React.createElement("div", {
+    className: "form-grid g4",
     style: {
       marginBottom: 12
     }
@@ -5963,22 +6009,26 @@ function StatementView({
     value: year,
     onChange: e => {
       setYear(e.target.value);
-      setSelMonths([]);
+      setFilterMonth('');
+      setCid('');
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
   }, "— 全部 —"), allYears.map(y => /*#__PURE__*/React.createElement("option", {
     key: y,
     value: y
-  }, y)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "客戶"), /*#__PURE__*/React.createElement("select", {
-    value: cid,
+  }, y)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "月份"), /*#__PURE__*/React.createElement("select", {
+    value: filterMonth,
     onChange: e => {
-      setCid(e.target.value);
-      setSelMonths([]);
+      setFilterMonth(e.target.value);
+      setCid('');
     }
+  }, /*#__PURE__*/React.createElement("option", {value: ""}, "— 全部月份 —"), yearMonths.map(m => /*#__PURE__*/React.createElement("option", {key: m, value: m}, rocML(m))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "客戶"), /*#__PURE__*/React.createElement("select", {
+    value: cid,
+    onChange: e => setCid(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "— 請選擇客戶 —"), customers.map(c => /*#__PURE__*/React.createElement("option", {
+  }, filteredCustomers.length ? "— 請選擇客戶 —" : "（此條件無訂單）"), filteredCustomers.length > 1 && /*#__PURE__*/React.createElement("option", {value: "ALL"}, "★ 全部客戶（" + filteredCustomers.length + " 位）"), filteredCustomers.map(c => /*#__PURE__*/React.createElement("option", {
     key: c.id,
     value: c.id
   }, c.name)))), /*#__PURE__*/React.createElement("div", {
@@ -5991,160 +6041,7 @@ function StatementView({
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn btn-gold",
     onClick: handlePrint
-  }, "🖨 列印對帳單"))), yearMonths.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 8,
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      fontWeight: 700,
-      color: '#1a2744'
-    }
-  }, "勾選月份："), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-sm",
-    onClick: selectAll
-  }, "全選"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-sm",
-    onClick: clearAll
-  }, "清除"), activeSel.length > 0 && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      color: '#c0392b',
-      fontWeight: 700
-    }
-  }, activeSel.length, " 個月已選")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      flexWrap: 'wrap',
-      gap: 6
-    }
-  }, yearMonths.map(m => {
-    const hasData = cid ? orders.some(o => o.customerId === cid && toROCM(o.date) === m) : true;
-    const checked = selMonths.includes(m);
-    return /*#__PURE__*/React.createElement("label", {
-      key: m,
-      style: {
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        padding: '4px 10px',
-        border: `1px solid ${checked ? '#1a2744' : '#ccd2dc'}`,
-        borderRadius: 6,
-        background: checked ? '#1a2744' : '#fff',
-        color: checked ? '#f5d98a' : '#444',
-        cursor: 'pointer',
-        fontSize: 12,
-        fontWeight: checked ? 700 : 400,
-        opacity: hasData ? 1 : 0.35
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: checked,
-      onChange: () => toggleM(m),
-      style: {
-        display: 'none'
-      }
-    }), rocML(m));
-  }))), monthsData.length > 0 ? /*#__PURE__*/React.createElement("div", null, monthsData.map((md, idx) => /*#__PURE__*/React.createElement("div", {
-    key: md.month,
-    style: {
-      marginBottom: 16
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      fontSize: 14,
-      padding: '6px 14px',
-      background: '#1a2744',
-      color: '#f5d98a',
-      borderRadius: '6px 6px 0 0',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center'
-    }
-  }, /*#__PURE__*/React.createElement("span", null, "📅 ", rocML(md.month)), /*#__PURE__*/React.createElement("span", null, "NT$ ", fmtN(md.total))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      overflowX: 'auto'
-    }
-  }, /*#__PURE__*/React.createElement("table", {
-    className: "data"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "訂購日期"), /*#__PURE__*/React.createElement("th", null, "單號"), /*#__PURE__*/React.createElement("th", null, "產品規格"), /*#__PURE__*/React.createElement("th", null, "尺寸"), /*#__PURE__*/React.createElement("th", null, "數量"), /*#__PURE__*/React.createElement("th", null, "單價"), /*#__PURE__*/React.createElement("th", null, "金額(NT$)"))), /*#__PURE__*/React.createElement("tbody", null, md.items.map((item, i) => /*#__PURE__*/React.createElement("tr", {
-    key: i
-  }, /*#__PURE__*/React.createElement("td", null, toROC(item.orderDate)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-    className: "badge badge-blue"
-  }, item.orderNum)), /*#__PURE__*/React.createElement("td", null, item.product, " ", item.color), /*#__PURE__*/React.createElement("td", {
-    style: {
-      textAlign: 'center'
-    }
-  }, item.size), /*#__PURE__*/React.createElement("td", {
-    style: {
-      textAlign: 'center'
-    }
-  }, item.qty), /*#__PURE__*/React.createElement("td", {
-    style: {
-      textAlign: 'center'
-    }
-  }, item.unitPrice), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: 500,
-      textAlign: 'right'
-    }
-  }, fmtN(item.amount)))), /*#__PURE__*/React.createElement("tr", {
-    style: {
-      background: '#f5f0e0',
-      fontWeight: 600
-    }
-  }, /*#__PURE__*/React.createElement("td", {
-    colSpan: 6,
-    style: {
-      textAlign: 'right',
-      paddingRight: 14
-    }
-  }, "本月合計"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontSize: 14,
-      color: '#c0392b',
-      textAlign: 'right'
-    }
-  }, fmtN(md.total)))))), idx < monthsData.length - 1 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      height: 2,
-      background: '#e2e8f0',
-      margin: '12px 0'
-    }
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: 'right',
-      fontWeight: 700,
-      fontSize: 16,
-      padding: '12px 4px',
-      borderTop: '2px solid #1a2744',
-      marginTop: 4
-    }
-  }, activeSel.length > 1 && /*#__PURE__*/React.createElement("span", {
-    style: {
-      marginRight: 16,
-      fontSize: 13,
-      color: '#64748b'
-    }
-  }, activeSel.length, " 個月份"), "總計：", /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: '#c0392b',
-      fontSize: 18
-    }
-  }, "NT$ ", fmtN(grandTotal)))) : cid ? /*#__PURE__*/React.createElement("div", {
-    className: "empty"
-  }, "請勾選月份以查看對帳資料") : /*#__PURE__*/React.createElement("div", {
-    className: "empty"
-  }, "請先選擇客戶")));
+  }, "🖨 列印對帳單")))))
 }
 
 /* ===== MONTHLY REPORT ===== */
@@ -8115,7 +8012,7 @@ function PasswordTab({
       margin: '20px 0',
       borderColor: '#e2e8f0'
     }
-  }), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {style:{marginBottom:20}}, /*#__PURE__*/React.createElement("div", {style:{fontWeight:600,fontSize:13,marginBottom:6,color:'#1a2744',borderBottom:'1px solid #eef1f6',paddingBottom:6}}, "💾 資料備份"), /*#__PURE__*/React.createElement("div", {style:{fontSize:12,color:'#888',marginBottom:10}}, "建議每週下載一次備份檔。Supabase 故障時，app 會自動使用本機快取，不會顯示空白。"), /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,flexWrap:'wrap'}}, /*#__PURE__*/React.createElement("button", {className:"btn btn-gold",onClick:DB.exportAll}, "⬇ 下載備份檔"), /*#__PURE__*/React.createElement("label", {style:{display:'inline-flex',alignItems:'center',gap:5,padding:'6px 14px',borderRadius:6,border:'1px solid #ccd2dc',background:'#fff',cursor:'pointer',fontSize:12,color:'#444',fontFamily:'inherit'}}, "⬆ 匯入備份檔", /*#__PURE__*/React.createElement("input", {type:"file",accept:".json",style:{display:'none'},onChange:async e=>{const file=e.target.files[0];if(!file)return;try{const n=await DB.importAll(file);alert('還原成功！共 '+n+' 筆資料，請重新整理頁面。');e.target.value='';}catch(err){alert('還原失敗：'+err.message);}}})))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 600,
       fontSize: 13,
@@ -8155,236 +8052,6 @@ function PasswordTab({
     className: "btn btn-primary",
     onClick: saveStaff
   }, "設定員工密碼")));
-}
-
-/* ===== BATCH EXPORT VIEW ===== */
-function BatchExportView({orders, customers}) {
-  const [status,    setStatus]    = useState('');
-  const [progCur,   setProgCur]   = useState(0);
-  const [progTotal, setProgTotal] = useState(0);
-  const [selMonth,  setSelMonth]  = useState('');
-  const [running,   setRunning]   = useState(false);
-
-  const CN_MONTHS = ['','一月','二月','三月','四月','五月','六月','七月','八月','九月','十月','十一月','十二月'];
-  const getM  = iso => new Date(iso + 'T00:00:00').getMonth() + 1;
-  const getMM = iso => String(new Date(iso + 'T00:00:00').getMonth() + 1).padStart(2,'0');
-  const getDD = iso => String(new Date(iso + 'T00:00:00').getDate()).padStart(2,'0');
-
-  const allMonths = [...new Set(orders.map(o => getMM(o.date)))].sort();
-
-  // 將列印 HTML 中的 setTimeout(print) 替換為 html2canvas 截圖 → postMessage 回傳給父視窗
-  function addCaptureScript(printHtml, msgId) {
-    const code = '(function(){' +
-      'var s=document.createElement("script");' +
-      's.src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";' +
-      's.onload=async function(){' +
-        'var pages=document.querySelectorAll("#out .page");' +
-        'var imgs=[];' +
-        'for(var i=0;i<pages.length;i++){' +
-          'var c=await html2canvas(pages[i],{scale:2,useCORS:true,logging:false,backgroundColor:"#ffffff"});' +
-          'imgs.push(c.toDataURL("image/jpeg",0.92));' +
-        '}' +
-        'window.parent.postMessage({type:"ylPdf",id:"' + msgId + '",imgs:imgs},"*");' +
-      '};' +
-      'document.head.appendChild(s);' +
-    '})();';
-    return printHtml.replace(/setTimeout\(function\(\)\{window\.print\(\);\},\d+\);/g, code);
-  }
-
-  // 在 iframe 中渲染列印 HTML，接收 postMessage 後組裝為 PDF blob
-  function renderToPdf(captureHtml, msgId) {
-    const { jsPDF } = window.jspdf;
-    return new Promise((resolve, reject) => {
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'position:fixed;top:0;left:0;width:820px;height:600px;border:none;opacity:0.001;z-index:-9999;pointer-events:none;';
-      document.body.appendChild(iframe);
-      let done = false;
-      const cleanup = () => { try { document.body.removeChild(iframe); } catch(_){} };
-      const timer = setTimeout(() => {
-        if (done) return; done = true;
-        window.removeEventListener('message', handler);
-        cleanup(); reject(new Error('timeout'));
-      }, 30000);
-      const handler = async evt => {
-        if (!evt.data || evt.data.type !== 'ylPdf' || evt.data.id !== msgId) return;
-        if (done) return; done = true;
-        window.removeEventListener('message', handler);
-        clearTimeout(timer); cleanup();
-        try {
-          const imgs = evt.data.imgs || [];
-          if (!imgs.length) { resolve(null); return; }
-          const pdf = new jsPDF({ orientation: 'l', unit: 'mm', format: [214, 140] });
-          imgs.forEach((img, i) => {
-            if (i > 0) pdf.addPage([214, 140], 'l');
-            pdf.addImage(img, 'JPEG', 0, 0, 214, 140);
-          });
-          resolve(pdf.output('blob'));
-        } catch(e) { reject(e); }
-      };
-      window.addEventListener('message', handler);
-      const iDoc = iframe.contentDocument;
-      iDoc.open(); iDoc.write(captureHtml); iDoc.close();
-    });
-  }
-
-  async function doExport(type) {
-    if (typeof window.jspdf === 'undefined') return alert('jsPDF 尚未載入，請重整頁面');
-    if (typeof JSZip  === 'undefined') return alert('JSZip 尚未載入，請重整頁面');
-    setRunning(true); setStatus(''); setProgCur(0); setProgTotal(0);
-
-    const filteredOrders = selMonth ? orders.filter(o => getMM(o.date) === selMonth) : orders;
-    let items = [];
-
-    if (type === 'orders') {
-      filteredOrders.forEach(o => {
-        const cust = customers.find(c => c.id === o.customerId); if (!cust) return;
-        items.push({
-          folder: CN_MONTHS[getM(o.date)],
-          filename: `${cust.name}${getMM(o.date)}${getDD(o.date)}.pdf`,
-          getHtml: () => genPrintHTML(o, cust, true)
-        });
-      });
-    } else {
-      const seen = {};
-      filteredOrders.forEach(o => { seen[o.customerId + '\x00' + toROCM(o.date)] = true; });
-      Object.keys(seen).forEach(key => {
-        const sep = key.indexOf('\x00'), custId = key.slice(0, sep), rocM = key.slice(sep + 1);
-        const cust = customers.find(c => c.id === custId); if (!cust) return;
-        const mNum = parseInt(rocM.split('-')[1], 10);
-        const custOrds = filteredOrders.filter(o => o.customerId === custId && toROCM(o.date) === rocM);
-        const itemsList = [];
-        custOrds.forEach(o => {
-          (o.items || []).forEach(it => itemsList.push({...it, orderDate: o.date, orderNum: o.orderNumber}));
-          if (o.shipping > 0) itemsList.push({ orderDate: o.date, orderNum: o.orderNumber, product: '運費', color: '', size: '', qty: 1, unitPrice: '', amount: o.shipping });
-        });
-        const monthsData = [{ month: rocM, items: itemsList, total: itemsList.reduce((s, i) => s + (i.amount || 0), 0) }];
-        items.push({
-          folder: CN_MONTHS[mNum],
-          filename: `${cust.name}${mNum}月請款單.pdf`,
-          getHtml: () => genMultiStmtHTML(monthsData, cust)
-        });
-      });
-    }
-
-    if (!items.length) { setRunning(false); return alert('沒有符合條件的資料'); }
-    setProgTotal(items.length);
-
-    const zip = new JSZip();
-    let ok = 0, fail = 0;
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      setStatus(`⏳ 產生中：${item.filename}（${i + 1}/${items.length}）`);
-      try {
-        const msgId = uid();
-        const blob  = await renderToPdf(addCaptureScript(item.getHtml(), msgId), msgId);
-        if (blob) { zip.folder(item.folder).file(item.filename, blob); ok++; }
-        else fail++;
-      } catch(e) { console.warn('PDF error:', item.filename, e.message); fail++; }
-      setProgCur(i + 1);
-    }
-
-    const mLabel  = selMonth ? CN_MONTHS[parseInt(selMonth, 10)] : '全部月份';
-    const zipName = `勇龍_${type === 'orders' ? '銷貨單' : '請款單'}_${mLabel}.zip`;
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(zipBlob); a.download = zipName; a.click();
-    setRunning(false); setProgCur(0); setProgTotal(0);
-    setStatus(`✅ 完成！成功 ${ok} 份${fail ? `，${fail} 份失敗` : ''}，已下載 ${zipName}`);
-  }
-
-  const byMonth = {};
-  orders.forEach(o => {
-    const m = getMM(o.date);
-    if (!byMonth[m]) byMonth[m] = { orders: [], custs: new Set() };
-    byMonth[m].orders.push(o); byMonth[m].custs.add(o.customerId);
-  });
-  const months = Object.keys(byMonth).sort();
-  const pct = progTotal > 0 ? Math.round(progCur / progTotal * 100) : 0;
-
-  return React.createElement('div', null,
-    React.createElement('div', { className: 'card' },
-      React.createElement('div', { className: 'card-title' }, '📥 批次匯出 PDF'),
-      React.createElement('div', { className: 'print-hint' },
-        '💡 系統逐一開啟文件、截圖並產生 PDF，再打包成 ZIP 下載。每份約需 3-8 秒，請耐心等候。',
-        React.createElement('br', null),
-        '📁 ZIP 解壓縮後可看到各月份資料夾（五月/、六月/…），PDF 可直接開啟、列印或存檔。'
-      ),
-      React.createElement('div', { style: { display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 14, flexWrap: 'wrap' } },
-        React.createElement('div', null,
-          React.createElement('label', { style: { display: 'block', fontSize: 11, color: '#666', marginBottom: 4 } }, '選擇月份'),
-          React.createElement('select', {
-            value: selMonth,
-            onChange: e => setSelMonth(e.target.value),
-            style: { padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', width: 148 },
-            disabled: running
-          },
-            React.createElement('option', { value: '' }, '— 全部月份 —'),
-            allMonths.map(m => React.createElement('option', { key: m, value: m },
-              CN_MONTHS[parseInt(m, 10)] + '　(' + parseInt(m, 10) + '月)'))
-          )
-        ),
-        React.createElement('button', {
-          className: 'btn btn-primary',
-          onClick: () => doExport('orders'),
-          disabled: running || !orders.length,
-          style: { fontSize: 13, padding: '7px 16px' }
-        }, running ? '⏳ 匯出中...' : '📋 匯出銷貨單 PDF'),
-        React.createElement('button', {
-          className: 'btn btn-gold',
-          onClick: () => doExport('statements'),
-          disabled: running || !orders.length,
-          style: { fontSize: 13, padding: '7px 16px' }
-        }, running ? '⏳ 匯出中...' : '💰 匯出請款單 PDF')
-      ),
-      progTotal > 0 && React.createElement('div', { style: { marginBottom: 10 } },
-        React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#666', marginBottom: 4 } },
-          React.createElement('span', null, `進度 ${progCur} / ${progTotal}`),
-          React.createElement('span', null, pct + '%')
-        ),
-        React.createElement('div', { style: { width: '100%', height: 8, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' } },
-          React.createElement('div', { style: { width: pct + '%', height: '100%', background: '#1a2744', borderRadius: 4, transition: 'width .3s' } })
-        )
-      ),
-      status && React.createElement('div', {
-        style: {
-          padding: '8px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500, marginTop: 4,
-          background: status.startsWith('✅') ? '#eaf3de' : status.startsWith('❌') ? '#fdf2f2' : '#f8fafd',
-          color: status.startsWith('✅') ? '#3b6d11' : status.startsWith('❌') ? '#c0392b' : '#555',
-          border: `1px solid ${status.startsWith('✅') ? '#b8dfa0' : status.startsWith('❌') ? '#f0c0c0' : '#dde3ec'}`
-        }
-      }, status)
-    ),
-    React.createElement('div', { className: 'card' },
-      React.createElement('div', { className: 'card-title' }, '📊 各月份資料概覽'),
-      months.length === 0
-        ? React.createElement('div', { className: 'empty' }, '尚無銷貨資料')
-        : React.createElement('table', { className: 'data' },
-            React.createElement('thead', null,
-              React.createElement('tr', null,
-                ['月份', '銷貨單數', '客戶數', '銷貨單 PDF 範例', '請款單 PDF 範例'].map(h =>
-                  React.createElement('th', { key: h }, h))
-              )
-            ),
-            React.createElement('tbody', null,
-              months.map(m => {
-                const d = byMonth[m];
-                const sO = d.orders[0];
-                const sC = sO ? customers.find(c => c.id === sO.customerId) : null;
-                const isActive = !selMonth || selMonth === m;
-                return React.createElement('tr', { key: m, style: { opacity: isActive ? 1 : 0.35 } },
-                  React.createElement('td', null, React.createElement('b', null, CN_MONTHS[parseInt(m, 10)] + '/')),
-                  React.createElement('td', null, d.orders.length + ' 張'),
-                  React.createElement('td', null, d.custs.size + ' 家'),
-                  React.createElement('td', null,
-                    sC ? React.createElement('span', { style: { color: '#0c447c' } }, `${sC.name}${m}${getDD(sO.date)}.pdf`) : '—'),
-                  React.createElement('td', null,
-                    sC ? React.createElement('span', { style: { color: '#854f0b' } }, `${sC.name}${parseInt(m, 10)}月請款單.pdf`) : '—')
-                );
-              })
-            )
-          )
-    )
-  );
 }
 
 /* ===== MAIN APP ===== */
@@ -8429,8 +8096,8 @@ function App() {
       setLoginPw('');
     }
   };
-  const PROTECTED_TABS = ['purchase', 'statement', 'monthly', 'receivables', 'export', 'settings'];
-  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['monthly', '📈 月銷售報表'], ['export', '📥 批次匯出'], ['settings', '⚙️ 設定']];
+  const PROTECTED_TABS = ['purchase', 'statement', 'monthly', 'receivables', 'settings'];
+  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['monthly', '📈 月銷售報表'], ['settings', '⚙️ 設定']];
   const visibleTabs = loggedIn ? ALL_TABS : [['orders', '📋 銷貨單管理']];
   useEffect(() => {
     (async () => {
@@ -8519,6 +8186,15 @@ function App() {
       setLoaded(true);
     })();
   }, []);
+  useEffect(() => {
+    if (!loaded) return;
+    const mo = new Date().toISOString().slice(0, 7);
+    if (localStorage.getItem('ylbk_auto_' + mo)) return;
+    setTimeout(() => {
+      DB.exportAll();
+      localStorage.setItem('ylbk_auto_' + mo, '1');
+    }, 2500);
+  }, [loaded]);
   const saveOrder = order => {
     const u = [order, ...orders];
     setOrders(u);
@@ -8767,9 +8443,6 @@ function App() {
     setReceivables: setReceivables,
     manualRec: manualRec,
     setManualRec: setManualRec
-  }), tab === 'export' && /*#__PURE__*/React.createElement(BatchExportView, {
-    orders: orders,
-    customers: customers
   }), tab === 'settings' && /*#__PURE__*/React.createElement(SettingsView, {
     customers: customers,
     setCustomers: setCustomers,
