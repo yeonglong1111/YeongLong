@@ -5764,48 +5764,54 @@ function PurchaseView({
   }));
 }
 
-/* ===== MULTI-MONTH STATEMENT PRINT ===== */
-function genMultiStmtHTML(monthsData, cust) {
-  const grandTotal = monthsData.reduce((s, m) => s + m.total, 0);
+/* ===== MULTI-MONTH STATEMENT PRINT (supports multiple customers in one print job) ===== */
+function genMultiStmtHTML(entries) {
   const rocMonthLabel = m => {
     const [y, mo] = m.split('-');
     return `${y}年${mo}月`;
   };
-  const dateRange = monthsData.length > 1 ? `${rocMonthLabel(monthsData[0].month)} ～ ${rocMonthLabel(monthsData[monthsData.length - 1].month)}` : rocMonthLabel(monthsData[0].month);
-
-  // 建立扁平列陣（不含 grand，grand 單獨處理）
-  const flatRows = [];
-  monthsData.forEach((md, mIdx) => {
-    flatRows.push({
-      type: 'hdr',
-      html: `<tr><td colspan="7" style="background:#1a2744;color:#f5d98a;font-weight:700;font-size:11pt;padding:2px 4px;text-align:left;border:1px solid #000">${rocMonthLabel(md.month)}</td></tr>`
-    });
-    md.items.forEach((item, i) => {
-      const d = item.orderDate ? toROC(item.orderDate).replace(/-/g, '') : '';
-      flatRows.push({
-        type: 'data',
-        html: `<tr class="dr"><td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product || ''} ${item.color || ''}</td><td>${item.size || ''}</td><td>${item.qty || ''}</td><td>${item.unitPrice || ''}</td><td style="text-align:right">${fmtN(item.amount)}</td></tr>`
-      });
-    });
-    flatRows.push({
-      type: 'sub',
-      html: `<tr class="tr"><td colspan="6" style="text-align:right;font-weight:700">本月合計</td><td style="font-weight:700;font-size:11pt;text-align:right">${fmtN(md.total)}</td></tr>`
-    });
-  });
-  const grandH = `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center;font-weight:700">總計</td><td style="font-weight:700;text-align:right">${fmtN(grandTotal)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td></td></tr><tr class="tr"><td colspan="2" style="text-align:center">實付</td><td></td></tr>`;
   const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
-  const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div><div class="ir"><span class="ib">對帳期間：</span><span>${dateRange}</span></div></div></div>`;
   const chH = `<th style="width:4%">No.</th><th style="width:9%">訂購日期</th><th style="width:29%;text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:14%">金額</th>`;
   const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}</div><div>電話：${COMPANY.tel}　　Line ID：${COMPANY.line}</div></div>`;
-  const rowHtmls = flatRows.map(r => r.html);
-  const rowTypes = flatRows.map(r => r.type);
-  const measRows = rowHtmls.join('');
+
+  const custList = entries.map(({
+    monthsData,
+    cust
+  }) => {
+    const grandTotal = monthsData.reduce((s, m) => s + m.total, 0);
+    const dateRange = monthsData.length > 1 ? `${rocMonthLabel(monthsData[0].month)} ～ ${rocMonthLabel(monthsData[monthsData.length - 1].month)}` : rocMonthLabel(monthsData[0].month);
+    // 建立扁平列陣（不含 grand，grand 單獨處理）
+    const flatRows = [];
+    monthsData.forEach(md => {
+      flatRows.push({
+        type: 'hdr',
+        html: `<tr><td colspan="7" style="background:#1a2744;color:#f5d98a;font-weight:700;font-size:11pt;padding:2px 4px;text-align:left;border:1px solid #000">${rocMonthLabel(md.month)}</td></tr>`
+      });
+      md.items.forEach((item, i) => {
+        const d = item.orderDate ? toROC(item.orderDate).replace(/-/g, '') : '';
+        flatRows.push({
+          type: 'data',
+          html: `<tr class="dr"><td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product || ''} ${item.color || ''}</td><td>${item.size || ''}</td><td>${item.qty || ''}</td><td>${item.unitPrice || ''}</td><td style="text-align:right">${fmtN(item.amount)}</td></tr>`
+        });
+      });
+      flatRows.push({
+        type: 'sub',
+        html: `<tr class="tr"><td colspan="6" style="text-align:right;font-weight:700">本月合計</td><td style="font-weight:700;font-size:11pt;text-align:right">${fmtN(md.total)}</td></tr>`
+      });
+    });
+    const grandH = `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center;font-weight:700">總計</td><td style="font-weight:700;text-align:right">${fmtN(grandTotal)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td></td></tr><tr class="tr"><td colspan="2" style="text-align:center">實付</td><td></td></tr>`;
+    const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div><div class="ir"><span class="ib">對帳期間：</span><span>${dateRange}</span></div></div></div>`;
+    return {
+      r: flatRows.map(r => r.html),
+      t: flatRows.map(r => r.type),
+      grand: grandH,
+      info: infoH
+    };
+  });
+
   const D = JSON.stringify({
-    r: rowHtmls,
-    t: rowTypes,
-    grand: grandH,
+    list: custList,
     hdr: hdrH,
-    info: infoH,
     ch: chH,
     ftr: ftrH
   }).replace(/\//g, '\\/');
@@ -5830,13 +5836,14 @@ th{font-weight:700;font-size:11pt}
 .sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:11pt;padding:2px 1px;white-space:nowrap}
 .footer{padding:4px 8px;font-size:11pt;border-top:1px solid #000}
 @media print{#meas{display:none}}`;
+  const measBlocks = custList.map((c, i) => `<div id="mh_${i}">${hdrH}<div class="ttl">請款對帳單</div>${c.info}</div>
+  <div id="mch_${i}"><table><thead><tr>${chH}</tr></thead></table></div>
+  <div id="mr_${i}"><table><tbody>${c.r.join('')}</tbody></table></div>
+  <div id="mg_${i}"><table><tbody>${c.grand}</tbody></table></div>`).join('\n');
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>請款對帳單</title>
 <style>${css}</style></head><body>
 <div id="meas">
-  <div id="mh">${hdrH}<div class="ttl">請款對帳單</div>${infoH}</div>
-  <div id="mch"><table><thead><tr>${chH}</tr></thead></table></div>
-  <div id="mr"><table><tbody>${measRows}</tbody></table></div>
-  <div id="mg"><table><tbody>${grandH}</tbody></table></div>
+  ${measBlocks}
   <div id="mf">${ftrH}</div>
 </div>
 <div id="out"></div>
@@ -5848,76 +5855,83 @@ window.onload=function(){
   document.body.appendChild(ref);
   var PH=ref.offsetHeight;
   document.body.removeChild(ref);
-  var mhH=document.getElementById('mh').offsetHeight;
-  var mchH=document.getElementById('mch').offsetHeight;
-  var mgH=document.getElementById('mg').offsetHeight;
   var mfH=document.getElementById('mf').offsetHeight;
-  var allTrs=document.querySelectorAll('#mr tr');
-  var rh=[].map.call(allTrs,function(el){return el.offsetHeight;});
-  document.getElementById('meas').remove();
-  var ovh=mhH+mchH+mfH;
-  // 初步分頁
-  var pages=[];var cur=[];var usedH=0;
-  for(var i=0;i<rh.length;i++){
-    var canBreak=true;
-    if(D.t[i]==='data'&&i>0&&D.t[i-1]==='hdr')canBreak=false;
-    if(D.t[i]==='sub')canBreak=false;
-    if(usedH+rh[i]<=PH-4-ovh){cur.push(i);usedH+=rh[i];}
-    else{
-      if(cur.length&&canBreak){pages.push(cur.slice());cur=[i];usedH=rh[i];}
-      else{cur.push(i);usedH+=rh[i];}
-    }
-  }
-  if(cur.length)pages.push(cur);
-  var lp=pages[pages.length-1];
-  var lh=lp.reduce(function(s,i){return s+rh[i];},0);
-  while(lh+ovh+mgH>PH-4&&lp.length>1){
-    var mv=-1;
-    for(var j=lp.length-1;j>=0;j--){if(D.t[lp[j]]==='data'){mv=j;break;}}
-    if(mv<0)break;
-    var moved=lp.splice(mv,1)[0];lh-=rh[moved];
-    var np=[moved];
-    if(mv<lp.length&&D.t[lp[mv]]==='sub'){var subMv=lp.splice(mv,1)[0];lh-=rh[subMv];np.push(subMv);}
-    pages.push(np);lp=np;lh=np.reduce(function(s,i){return s+rh[i];},0);
-    if(np.length>1)break;
-  }
-  function build(){
-    var tp=pages.length;
-    var out=document.getElementById('out');
-    out.innerHTML='';
-    for(var p=0;p<tp;p++){
-      var pr=pages[p];var isLast=p===tp-1;
-      var pg=tp>1?'　<span class="pg">(第'+(p+1)+'頁/共'+tp+'頁)</span>':'';
-      var rows='';for(var k=0;k<pr.length;k++)rows+=D.r[pr[k]];
-      var div=document.createElement('div');
-      div.className='page'+(isLast?' last':'');
-      div.innerHTML=D.hdr+'<div class="ttl">請款對帳單'+pg+'</div>'+D.info
-        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLast?D.grand:'')+'</tbody></table>'
-        +D.ftr;
-      out.appendChild(div);
-    }
-  }
-  // 迭代校正：量測實際渲染高度，超出就移最後可移動筆到下一頁
-  for(var iter=0;iter<20;iter++){
-    build();
-    var divs=document.getElementById('out').querySelectorAll('.page');
-    var changed=false;
-    for(var p=0;p<divs.length;p++){
-      if(divs[p].offsetHeight>PH&&pages[p].length>1){
-        var mv2=-1;
-        for(var j2=pages[p].length-1;j2>=0;j2--){if(D.t[pages[p][j2]]==='data'){mv2=j2;break;}}
-        if(mv2<0)continue;
-        var mv3=pages[p].splice(mv2,1)[0];
-        var toMv=[mv3];
-        if(mv2<pages[p].length&&D.t[pages[p][mv2]]==='sub'){var subMv2=pages[p].splice(mv2,1)[0];toMv.push(subMv2);}
-        if(p+1>=pages.length)pages.push(toMv);
-        else{for(var ti=toMv.length-1;ti>=0;ti--)pages[p+1].unshift(toMv[ti]);}
-        changed=true;
+  var out=document.getElementById('out');
+  var totalCust=D.list.length;
+  for(let ci=0; ci<totalCust; ci++){
+    let cd=D.list[ci];
+    let mhH=document.getElementById('mh_'+ci).offsetHeight;
+    let mchH=document.getElementById('mch_'+ci).offsetHeight;
+    let mgH=document.getElementById('mg_'+ci).offsetHeight;
+    let allTrs=document.querySelectorAll('#mr_'+ci+' tr');
+    let rh=[].map.call(allTrs,function(el){return el.offsetHeight;});
+    let ovh=mhH+mchH+mfH;
+    // 初步分頁
+    let pages=[];let cur=[];let usedH=0;
+    for(let i=0;i<rh.length;i++){
+      let canBreak=true;
+      if(cd.t[i]==='data'&&i>0&&cd.t[i-1]==='hdr')canBreak=false;
+      if(cd.t[i]==='sub')canBreak=false;
+      if(usedH+rh[i]<=PH-4-ovh){cur.push(i);usedH+=rh[i];}
+      else{
+        if(cur.length&&canBreak){pages.push(cur.slice());cur=[i];usedH=rh[i];}
+        else{cur.push(i);usedH+=rh[i];}
       }
     }
-    if(!changed)break;
+    if(cur.length)pages.push(cur);
+    let lp=pages[pages.length-1];
+    let lh=lp.reduce(function(s,i){return s+rh[i];},0);
+    while(lh+ovh+mgH>PH-4&&lp.length>1){
+      let mv=-1;
+      for(let j=lp.length-1;j>=0;j--){if(cd.t[lp[j]]==='data'){mv=j;break;}}
+      if(mv<0)break;
+      let moved=lp.splice(mv,1)[0];lh-=rh[moved];
+      let np=[moved];
+      if(mv<lp.length&&cd.t[lp[mv]]==='sub'){let subMv=lp.splice(mv,1)[0];lh-=rh[subMv];np.push(subMv);}
+      pages.push(np);lp=np;lh=np.reduce(function(s,i){return s+rh[i];},0);
+      if(np.length>1)break;
+    }
+    function buildCust(){
+      let old=out.querySelectorAll('.cust-'+ci);
+      old.forEach(function(d){out.removeChild(d);});
+      let tp=pages.length;
+      for(let p=0;p<tp;p++){
+        let pr=pages[p];
+        let isLastPageOfCust=p===tp-1;
+        let isVeryLast=isLastPageOfCust&&ci===totalCust-1;
+        let pg=tp>1?'　<span class="pg">(第'+(p+1)+'頁/共'+tp+'頁)</span>':'';
+        let rows='';for(let k=0;k<pr.length;k++)rows+=cd.r[pr[k]];
+        let div=document.createElement('div');
+        div.className='page cust-'+ci+(isVeryLast?' last':'');
+        div.innerHTML=D.hdr+'<div class="ttl">請款對帳單'+pg+'</div>'+cd.info
+          +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLastPageOfCust?cd.grand:'')+'</tbody></table>'
+          +D.ftr;
+        out.appendChild(div);
+      }
+    }
+    buildCust();
+    // 迭代校正：量測實際渲染高度，超出就移最後可移動筆到下一頁
+    for(let iter=0;iter<20;iter++){
+      let divs=out.querySelectorAll('.cust-'+ci);
+      let changed=false;
+      for(let p=0;p<divs.length;p++){
+        if(divs[p].offsetHeight>PH&&pages[p].length>1){
+          let mv2=-1;
+          for(let j2=pages[p].length-1;j2>=0;j2--){if(cd.t[pages[p][j2]]==='data'){mv2=j2;break;}}
+          if(mv2<0)continue;
+          let mv3=pages[p].splice(mv2,1)[0];
+          let toMv=[mv3];
+          if(mv2<pages[p].length&&cd.t[pages[p][mv2]]==='sub'){let subMv2=pages[p].splice(mv2,1)[0];toMv.push(subMv2);}
+          if(p+1>=pages.length)pages.push(toMv);
+          else{for(let ti=toMv.length-1;ti>=0;ti--)pages[p+1].unshift(toMv[ti]);}
+          changed=true;
+        }
+      }
+      if(!changed)break;
+      buildCust();
+    }
   }
-  build();
+  document.getElementById('meas').remove();
   setTimeout(function(){window.print();},500);
 };
 <\/script>
@@ -5979,15 +5993,19 @@ function StatementView({
     if (!cid) return alert('請先選擇客戶');
     const custsToPrint = cid === 'ALL' ? filteredCustomers : (cust ? [cust] : []);
     if (!custsToPrint.length) return alert('無客戶資料');
-    const parts = custsToPrint.map(c => {
+    const entries = custsToPrint.map(c => {
       const months = getCustMonths(c.id);
-      if (!months.length) return '';
-      return genMultiStmtHTML(months.map(m => getMonthDataForCust(c.id, m)), c);
+      if (!months.length) return null;
+      return {
+        monthsData: months.map(m => getMonthDataForCust(c.id, m)),
+        cust: c
+      };
     }).filter(Boolean);
-    if (!parts.length) return alert('所選條件無對帳單資料');
+    if (!entries.length) return alert('所選條件無對帳單資料');
+    const html = genMultiStmtHTML(entries);
     const w = window.open('', '_blank', 'width=820,height=800');
     if (!w) return;
-    w.document.write(parts.join('<div style="page-break-after:always"></div>'));
+    w.document.write(html);
     w.document.close();
   };
   const rocML = m => {
