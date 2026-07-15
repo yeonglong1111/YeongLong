@@ -3807,7 +3807,8 @@ const DB = {
 };
 
 /* ===== L-TYPE PRINT SVG ===== */
-function genLPrintSvg(dir, a, b) {
+function genLPrintSvg(dir, a, b, scale) {
+  scale = scale || 1;
   const c = {
     '左下': {pts:'0,0 15,0 15,50 90,50 90,65 0,65', bx:7, by:25, ax:52, ay:58},
     '左上': {pts:'0,0 90,0 90,15 15,15 15,65 0,65',  bx:7, by:40, ax:52, ay:7},
@@ -3815,10 +3816,12 @@ function genLPrintSvg(dir, a, b) {
     '右上': {pts:'0,0 90,0 90,65 75,65 75,15 0,15',  bx:82, by:40, ax:37, ay:7}
   };
   const s = c[dir] || c['左下'];
-  return '<svg width="90" height="65" style="display:block">'
+  const w = Math.round(90 * scale), h = Math.round(65 * scale);
+  // 依座標由左至右排序，數字一律水平顯示（不旋轉），只顯示數字本身
+  const labels = [{ x: s.bx, y: s.by, v: b }, { x: s.ax, y: s.ay, v: a }].sort((p, q) => p.x - q.x);
+  return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 90 65" style="display:block">'
     + '<polygon points="' + s.pts + '" fill="#c8dff8" stroke="#1a4d8f" stroke-width="1.5"/>'
-    + '<text x="' + s.bx + '" y="' + (s.by + 3) + '" text-anchor="middle" transform="rotate(-90,' + s.bx + ',' + s.by + ')" fill="#1a4d8f" font-size="9" font-weight="bold">B=' + (b || 0) + 'cm</text>'
-    + '<text x="' + s.ax + '" y="' + (s.ay + 3) + '" text-anchor="middle" fill="#c0392b" font-size="9" font-weight="bold">A=' + (a || 0) + 'cm</text>'
+    + labels.map(l => '<text x="' + l.x + '" y="' + (l.y + 3) + '" text-anchor="middle" fill="#1a4d8f" font-size="9" font-weight="bold">' + (l.v || 0) + '</text>').join('')
     + '</svg>';
 }
 
@@ -3850,8 +3853,11 @@ function genPrintHTML(order, cust, showPrices) {
   const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}</div><div>電話：${COMPANY.tel}　　Line ID：${COMPANY.line}</div></div>`;
   const signH = showPrices ? `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${fmtN(total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>` : `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="2" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>`;
   const lItems = items.filter(it => it.product && it.product.includes('L型') && it.lDir);
-  const lDiagH = lItems.length ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:14px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:9pt;font-weight:bold;margin-bottom:2px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:9pt;color:#555;margin-bottom:3px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB) + '</div>').join('') + '</div>' : '';
+  const lDiagH = lItems.length ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:18px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:10pt;font-weight:bold;margin-bottom:2px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:10pt;color:#555;margin-bottom:3px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB, 2.2) + '</div>').join('') + '</div>' : '';
+  // 表格內備註列（放得下就跟資料一起印在同一頁）
   const noteH = (order.note || lDiagH) ? `<tr><td colspan="${cols}" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000"><strong>備註：</strong>${order.note || ''}${lDiagH}</td></tr>` : '';
+  // 放不下時，備註／L型圖獨立成一頁使用的版本（非表格列）
+  const noteBigH = (order.note || lDiagH) ? `<div style="padding:8px 10px"><div style="font-size:12pt"><strong>備註：</strong>${order.note || ''}</div>${lDiagH}</div>` : '';
   const measRows = rowsData.map(tds => `<tr class="dr">${tds}</tr>`).join('');
   // 安全地嵌入 JSON，將 / 替換為 \/ 防止字串中出現 script 結束標籤
   const D = JSON.stringify({
@@ -3862,6 +3868,7 @@ function genPrintHTML(order, cust, showPrices) {
     ftr: ftrH,
     sign: signH,
     note: noteH,
+    noteBig: noteBigH,
     title
   }).replace(/\//g, '\\/');
   const css = `@page{size:21.4cm 14cm;margin:5mm}
@@ -3881,10 +3888,11 @@ body{font-family:"Microsoft JhengHei","PingFang TC",sans-serif;font-size:11pt;co
 table{width:100%;border-collapse:collapse;font-size:11pt}
 th,td{border:1px solid #000;padding:2px 3px;text-align:center;vertical-align:middle;color:#000;background:#fff}
 th{font-weight:700;font-size:11pt}
+tr.dr:nth-child(even) td{background:#eef1f6}
 .tr td{font-weight:700;font-size:11pt}
 .sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:11pt;padding:2px 1px;white-space:nowrap}
 .footer{padding:4px 8px;font-size:11pt;border-top:1px solid #000}
-@media print{#meas{display:none}}`;
+@media print{#meas{display:none}tr.dr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}`;
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
 <style>${css}</style></head><body>
 <div id="meas">
@@ -3925,12 +3933,13 @@ window.onload=function(){
   if(cur.length)pages.push(cur);
   var lp=pages[pages.length-1];
   var lh=lp.reduce(function(s,i){return s+rh[i];},0);
-  while(lh+ovh+msH+mnH>PH-4&&lp.length>1){
+  // 只為了簽收欄留空間才會把資料列擠到下一頁；備註／L型圖不影響資料列分頁
+  while(lh+ovh+msH>PH-4&&lp.length>1){
     var mv=lp.pop();lh-=rh[mv];
     var np=[mv];pages.push(np);lp=np;lh=rh[mv];
   }
-  // 建立頁面 div 的函式
-  function build(){
+  // 建立僅含資料列＋簽收欄的頁面（不含備註／L型圖），用來校正資料列分頁
+  function buildRowsOnly(){
     var tp=pages.length;
     var out=document.getElementById('out');
     out.innerHTML='';
@@ -3941,14 +3950,14 @@ window.onload=function(){
       var div=document.createElement('div');
       div.className='page'+(isLast?' last':'');
       div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
-        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLast?D.note+D.sign:'')+'</tbody></table>'
+        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLast?D.sign:'')+'</tbody></table>'
         +D.ftr;
       out.appendChild(div);
     }
   }
-  // 迭代校正：量測實際渲染高度，超出就移最後一筆到下一頁
+  // 迭代校正：量測實際渲染高度，超出就移最後一筆到下一頁（僅根據資料列本身，不受備註／L型圖影響）
   for(var iter=0;iter<20;iter++){
-    build();
+    buildRowsOnly();
     var divs=document.getElementById('out').querySelectorAll('.page');
     var changed=false;
     for(var p=0;p<divs.length;p++){
@@ -3960,6 +3969,39 @@ window.onload=function(){
       }
     }
     if(!changed)break;
+  }
+  // 判斷備註／L型圖能否放進最後一頁（資料列＋簽收欄之後）；放不下就獨立成一頁
+  buildRowsOnly();
+  var lastDivs=document.getElementById('out').querySelectorAll('.page');
+  var lastUsedH=lastDivs.length?lastDivs[lastDivs.length-1].offsetHeight:0;
+  var splitNote=mnH>0&&(lastUsedH+mnH>PH-4);
+  // 建立最終頁面（含備註／L型圖）
+  function build(){
+    var tp=pages.length;
+    var totalPages=tp+(splitNote?1:0);
+    var out=document.getElementById('out');
+    out.innerHTML='';
+    for(var p=0;p<tp;p++){
+      var pr=pages[p];var isLastRowsPage=p===tp-1;
+      var isVeryLast=isLastRowsPage&&!splitNote;
+      var pg=totalPages>1?'　<span class="pg">(第'+(p+1)+'頁/共'+totalPages+'頁)</span>':'';
+      var rows='';for(var k=0;k<pr.length;k++)rows+='<tr class="dr">'+D.r[pr[k]]+'</tr>';
+      var tail='';
+      if(isLastRowsPage)tail=(splitNote?'':D.note)+D.sign;
+      var div=document.createElement('div');
+      div.className='page'+(isVeryLast?' last':'');
+      div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
+        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+tail+'</tbody></table>'
+        +D.ftr;
+      out.appendChild(div);
+    }
+    if(splitNote){
+      var pg2=totalPages>1?'　<span class="pg">(第'+totalPages+'頁/共'+totalPages+'頁)</span>':'';
+      var ndiv=document.createElement('div');
+      ndiv.className='page last';
+      ndiv.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg2+'</div>'+D.info+D.noteBig+D.ftr;
+      out.appendChild(ndiv);
+    }
   }
   build();
   setTimeout(function(){window.print();},500);
@@ -5832,10 +5874,11 @@ body{font-family:"Microsoft JhengHei","PingFang TC",sans-serif;font-size:11pt;co
 table{width:100%;border-collapse:collapse;font-size:11pt}
 th,td{border:1px solid #000;padding:2px 3px;text-align:center;vertical-align:middle;color:#000;background:#fff}
 th{font-weight:700;font-size:11pt}
+tr.dr:nth-child(even) td{background:#eef1f6}
 .tr td{font-weight:700;font-size:11pt}
 .sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:11pt;padding:2px 1px;white-space:nowrap}
 .footer{padding:4px 8px;font-size:11pt;border-top:1px solid #000}
-@media print{#meas{display:none}}`;
+@media print{#meas{display:none}tr.dr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}`;
   const measBlocks = custList.map((c, i) => `<div id="mh_${i}">${hdrH}<div class="ttl">請款對帳單</div>${c.info}</div>
   <div id="mch_${i}"><table><thead><tr>${chH}</tr></thead></table></div>
   <div id="mr_${i}"><table><tbody>${c.r.join('')}</tbody></table></div>
