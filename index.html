@@ -6112,7 +6112,8 @@ function MonthlyReport({
   costs,
   purchases,
   receivables,
-  manualRec
+  manualRec,
+  products
 }) {
   const [year, setYear] = useState(toROCM(today()).split('-')[0]);
   const [month, setMonth] = useState(toROCM(today()).split('-')[1]);
@@ -6141,8 +6142,11 @@ function MonthlyReport({
       byCustomer[cn].revenue += item.amount;
       byCustomer[cn].qty += item.qty;
       const key = `${item.product} ${item.color} ${item.size}cm`;
+      const prodCat = (products || []).find(p => p.name === item.product)?.priceCat || PCAT[item.product] || item.product;
       if (!bySpec[key]) bySpec[key] = {
         spec: key,
+        product: prodCat,
+        color: item.color,
         qty: 0,
         revenue: 0,
         cost: 0
@@ -6187,7 +6191,28 @@ function MonthlyReport({
     actualByCust[cn] = (actualByCust[cn] || 0) + amt;
   });
   const custRows = Object.values(byCustomer).sort((a, b) => b.revenue - a.revenue);
-  const specRows = Object.values(bySpec).sort((a, b) => b.qty - a.qty);
+  const TARGET_SPEC_PRODUCTS = ['ㄇ666', 'h667'];
+  const specGroupsMap = {};
+  Object.values(bySpec).filter(r => TARGET_SPEC_PRODUCTS.includes(r.product)).forEach(r => {
+    (specGroupsMap[r.product] || (specGroupsMap[r.product] = [])).push(r);
+  });
+  const specGroups = TARGET_SPEC_PRODUCTS.filter(p => specGroupsMap[p]).map(product => {
+    const rows = specGroupsMap[product];
+    const colorMap = {};
+    rows.forEach(r => {
+      (colorMap[r.color] || (colorMap[r.color] = [])).push(r);
+    });
+    const colorGroups = Object.entries(colorMap).map(([color, crows]) => ({
+      color,
+      totalQty: crows.reduce((s, r) => s + r.qty, 0),
+      rows: crows.sort((a, b) => b.qty - a.qty)
+    })).sort((a, b) => b.totalQty - a.totalQty);
+    return {
+      product,
+      totalQty: rows.reduce((s, r) => s + r.qty, 0),
+      colorGroups
+    };
+  });
   const profit = actualRevTotal - totalCost;
   const netProfit = profit - totalPurchase;
   const margin = actualRevTotal > 0 ? (profit / actualRevTotal * 100).toFixed(1) : 0;
@@ -6328,9 +6353,34 @@ function MonthlyReport({
     className: "empty"
   }, "無銷售資料"), /*#__PURE__*/React.createElement("div", {
     className: "section-hdr"
-  }, "各規格銷售統計"), specRows.length > 0 ? /*#__PURE__*/React.createElement("table", {
+  }, "各規格銷售統計（僅 ㄇ666 / h667，依顏色分開排序）"), specGroups.length > 0 ? /*#__PURE__*/React.createElement("div", null, specGroups.map(g => /*#__PURE__*/React.createElement("div", {
+    key: g.product,
+    style: {
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 14,
+      color: '#1a2744',
+      margin: '6px 0 4px'
+    }
+  }, "產品編號：", g.product), g.colorGroups.map(cg => /*#__PURE__*/React.createElement("div", {
+    key: g.product + '-' + cg.color,
+    style: {
+      marginBottom: 10,
+      marginLeft: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600,
+      fontSize: 13,
+      color: '#555',
+      margin: '4px 0'
+    }
+  }, "顏色：", cg.color), /*#__PURE__*/React.createElement("table", {
     className: "data"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "規格"), /*#__PURE__*/React.createElement("th", null, "數量（條）"), /*#__PURE__*/React.createElement("th", null, "銷售金額"), /*#__PURE__*/React.createElement("th", null, "估算成本"), /*#__PURE__*/React.createElement("th", null, "毛利"))), /*#__PURE__*/React.createElement("tbody", null, specRows.map(r => /*#__PURE__*/React.createElement("tr", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "規格"), /*#__PURE__*/React.createElement("th", null, "數量（條）"), /*#__PURE__*/React.createElement("th", null, "銷售金額"), /*#__PURE__*/React.createElement("th", null, "估算成本"), /*#__PURE__*/React.createElement("th", null, "毛利"))), /*#__PURE__*/React.createElement("tbody", null, cg.rows.map(r => /*#__PURE__*/React.createElement("tr", {
     key: r.spec
   }, /*#__PURE__*/React.createElement("td", null, r.spec), /*#__PURE__*/React.createElement("td", {
     style: {
@@ -6353,7 +6403,7 @@ function MonthlyReport({
       fontWeight: 500,
       textAlign: 'right'
     }
-  }, fmtN(r.revenue - r.cost)))))) : /*#__PURE__*/React.createElement("div", {
+  }, fmtN(r.revenue - r.cost))))))))))) : /*#__PURE__*/React.createElement("div", {
     className: "empty"
   }, "無銷售資料"), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -8496,7 +8546,8 @@ function App() {
     costs: costs,
     purchases: purchases,
     receivables: receivables,
-    manualRec: manualRec
+    manualRec: manualRec,
+    products: products
   }), tab === 'receivables' && /*#__PURE__*/React.createElement(ReceivablesView, {
     orders: orders,
     customers: customers,
