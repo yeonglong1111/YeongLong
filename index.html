@@ -3850,7 +3850,7 @@ function genPrintHTML(order, cust, showPrices) {
   const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
   const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div>${showPrices ? `<div class="ir"><span class="ib">對帳月份：</span><span>${rocM}</span></div>` : `<div class="ir"><span class="ib">銷貨單號：</span><span>${order.orderNumber}</span></div>`}<div class="ir"><span class="ib">日期：</span><span>${showPrices ? rocM : roc}</span></div></div></div>`;
   const chH = `<th style="width:4%">No.</th>${showPrices ? '<th style="width:9%">訂購日期</th>' : ''}<th style="${showPrices ? 'width:29%' : 'width:38%'};text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:12%">金額</th><th style="width:14%">備註</th>`;
-  const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}</div><div>電話：${COMPANY.tel}　　Line ID：${COMPANY.line}</div></div>`;
+  const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　Line ID：${COMPANY.line}</div></div>`;
   const signH = showPrices ? `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${fmtN(total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>` : `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="2" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>`;
   const lItems = items.filter(it => it.product && it.product.includes('L型') && it.lDir);
   const lDiagH = lItems.length ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:18px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:10pt;font-weight:bold;margin-bottom:2px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:10pt;color:#555;margin-bottom:3px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB, 2.2) + '</div>').join('') + '</div>' : '';
@@ -3891,7 +3891,7 @@ th{font-weight:700;font-size:11pt}
 tr.dr:nth-child(even) td{background:#eef1f6}
 .tr td{font-weight:700;font-size:11pt}
 .sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:11pt;padding:2px 1px;white-space:nowrap}
-.footer{padding:4px 8px;font-size:11pt;border-top:1px solid #000}
+.footer{padding:2px 8px;font-size:11pt;border-top:1px solid #000}
 @media print{#meas{display:none}tr.dr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}`;
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
 <style>${css}</style></head><body>
@@ -5129,10 +5129,12 @@ function NewPOModal({
     setItems(prev => {
       const arr = [...prev];
       const num = ['qty', 'unitPrice', 'amount'].includes(field) ? Number(val) || 0 : val;
-      arr[idx] = {
+      const updated = {
         ...arr[idx],
         [field]: num
       };
+      if (field !== 'amount') updated.amount = Math.round((updated.qty || 0) * (updated.unitPrice || 0));
+      arr[idx] = updated;
       return arr;
     });
   };
@@ -5314,10 +5316,12 @@ function EditPOModal({
     setItems(prev => {
       const arr = [...prev];
       const num = ['qty', 'unitPrice', 'amount'].includes(field) ? Number(val) || 0 : val;
-      arr[idx] = {
+      const updated = {
         ...arr[idx],
         [field]: num
       };
+      if (field !== 'amount') updated.amount = Math.round((updated.qty || 0) * (updated.unitPrice || 0));
+      arr[idx] = updated;
       return arr;
     });
   };
@@ -5814,7 +5818,7 @@ function genMultiStmtHTML(entries) {
   };
   const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
   const chH = `<th style="width:4%">No.</th><th style="width:9%">訂購日期</th><th style="width:29%;text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:14%">金額</th>`;
-  const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}</div><div>電話：${COMPANY.tel}　　Line ID：${COMPANY.line}</div></div>`;
+  const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　Line ID：${COMPANY.line}</div></div>`;
 
   const custList = entries.map(({
     monthsData,
@@ -5877,7 +5881,7 @@ th{font-weight:700;font-size:11pt}
 tr.dr:nth-child(even) td{background:#eef1f6}
 .tr td{font-weight:700;font-size:11pt}
 .sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:11pt;padding:2px 1px;white-space:nowrap}
-.footer{padding:3px 8px;font-size:11pt;border-top:1px solid #000}
+.footer{padding:2px 8px;font-size:11pt;border-top:1px solid #000}
 @media print{#meas{display:none}tr.dr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}`;
   const measBlocks = custList.map((c, i) => `<div id="mh_${i}">${hdrH}<div class="ttl">請款對帳單</div>${c.info}</div>
   <div id="mch_${i}"><table><thead><tr>${chH}</tr></thead></table></div>
