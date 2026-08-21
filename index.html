@@ -8482,14 +8482,27 @@ function App() {
     }
   }), "⚡ 勇龍有限公司 銷貨管理系統"), /*#__PURE__*/React.createElement("div", {
     className: "navbar-sub"
-  }, "YEONG LONG Ltd — Sales Management System")), loggedIn ? /*#__PURE__*/React.createElement("button", {
+  }, "YEONG LONG Ltd — Sales Management System")), loggedIn ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    style: {
+      color: '#f5d98a',
+      borderColor: 'rgba(245,217,138,0.4)'
+    },
+    onClick: DB.exportAll
+  }, "⬇ 備份"), /*#__PURE__*/React.createElement("button", {
     className: "btn",
     style: {
       color: '#f5d98a',
       borderColor: 'rgba(245,217,138,0.4)'
     },
     onClick: logout
-  }, "🔓 登出") : /*#__PURE__*/React.createElement("div", {
+  }, "🔓 登出")) : /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 6,
