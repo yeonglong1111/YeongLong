@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>勇龍有限公司 銷貨管理系統</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://akzdbdcutvolydlhjoug.supabase.co" crossorigin>
+<link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+<link rel="dns-prefetch" href="https://akzdbdcutvolydlhjoug.supabase.co">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:"Microsoft JhengHei","PingFang TC","Noto Sans CJK TC",sans-serif;font-size:13px;background:#f4f6f9;color:#2d2d2d;min-height:100vh}
@@ -71,8 +75,8 @@ table.data tr:hover td{background:#f8fafd}
 <body>
 <div id="root"><div id="init-loading" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:Microsoft JhengHei,sans-serif;color:#1a2744"><div style="width:36px;height:36px;border:3px solid #dde3ec;border-top-color:#1a2744;border-radius:50%;animation:ld-spin .8s linear infinite;margin-bottom:14px"></div><div style="font-size:14px;color:#666">載入中…</div></div></div>
 <style>@keyframes ld-spin{to{transform:rotate(360deg)}}</style>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 const {
@@ -3732,13 +3736,49 @@ const calcAmt = (s, p, q) => Math.round(s * p * q);
 const fmtN = n => Number(n).toLocaleString();
 const uid = () => Math.random().toString(36).slice(2, 8);
 
-/* ===== SUPABASE DATABASE ===== */
+/* ===== SUPABASE DATABASE =====
+ * 2026-08-21：原 Supabase 專案 akzdbdcutvolydlhjoug 已失效（DNS NXDOMAIN，專案被刪除或回收）。
+ * 每一次讀寫都失敗，且舊程式碼只寫 console 不跳警告，導致兩台電腦各自使用本機快取而分岔。
+ * 目前改為「純本機模式」：CLOUD_ENABLED = false。
+ *
+ * 之後要重新接上雲端，只要做兩件事：
+ *   1) 把 SUPA_URL / SUPA_KEY 換成新專案的值
+ *   2) 把 CLOUD_ENABLED 改成 true
+ * 新專案需要一張 store 表：key (text, primary key), value (jsonb), updated_at (timestamptz)
+ * 並設定 RLS 允許 anon 讀寫。
+ */
+const CLOUD_ENABLED = false;
 const SUPA_URL = 'https://akzdbdcutvolydlhjoug.supabase.co';
 const SUPA_KEY = 'sb_publishable_aGTsFRXyJgTHiSkQFVqzNA_JsG1h7LP';
-const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+// CDN 掛掉或雲端關閉時不要讓整個 app 當掉
+let supa = null;
+if (CLOUD_ENABLED) {
+  try {
+    supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+  } catch (e) {
+    console.error('[DB] Supabase client 建立失敗，改用純本機模式:', e.message);
+  }
+}
+const CLOUD_ON = () => CLOUD_ENABLED && !!supa;
 const DB = {
   _loaded: new Set(),
+  _warned: false,
+  /* 雲端異常只提醒一次，避免每次操作都跳視窗 */
+  _warnOnce: msg => {
+    if (DB._warned) return;
+    DB._warned = true;
+    alert(msg);
+  },
+  /* 只讀本機，讀不到就回預設值 */
+  _lsGet: (k, d) => {
+    const local = localStorage.getItem('ylbk_' + k);
+    if (local !== null) {
+      try { return JSON.parse(local); } catch(e) { console.warn('[DB] 本機資料損壞:', k, e.message); }
+    }
+    return d;
+  },
   load: async (k, d) => {
+    if (!CLOUD_ON()) { DB._loaded.add(k); return DB._lsGet(k, d); }
     try {
       const { data, error } = await supa.from('store').select('value').eq('key', k).maybeSingle();
       if (error) {
@@ -3758,25 +3798,97 @@ const DB = {
       return d;
     }
   },
+  /* 一次把多個 key 用單一查詢抓回來，取代 N 次序列化的 round-trip */
+  loadMany: async defs => {
+    const keys = Object.keys(defs);
+    const out = {};
+    const useLocal = () => {
+      keys.forEach(k => {
+        const local = localStorage.getItem('ylbk_' + k);
+        if (local !== null) {
+          try { out[k] = JSON.parse(local); DB._loaded.add(k); return; } catch(_) {}
+        }
+        out[k] = defs[k];
+      });
+      return out;
+    };
+    // 純本機模式：完全不碰網路，開啟是瞬間的
+    if (!CLOUD_ON()) {
+      keys.forEach(k => { DB._loaded.add(k); out[k] = DB._lsGet(k, defs[k]); });
+      return out;
+    }
+    try {
+      const { data, error } = await supa.from('store').select('key,value').in('key', keys);
+      if (error) {
+        console.warn('[DB loadMany error]', error.message, '→ 改用本機備份');
+        return useLocal();
+      }
+      const map = {};
+      (data || []).forEach(r => { map[r.key] = r.value; });
+      keys.forEach(k => {
+        const val = Object.prototype.hasOwnProperty.call(map, k) ? map[k] : defs[k];
+        try { localStorage.setItem('ylbk_' + k, JSON.stringify(val)); } catch(_) {}
+        DB._loaded.add(k);
+        out[k] = val;
+      });
+      return out;
+    } catch(e) {
+      console.warn('[DB loadMany catch]', e.message, '→ 改用本機備份');
+      return useLocal();
+    }
+  },
+  /* 只讀本機快取，不碰網路，也不標記 _loaded（所以不會允許寫回覆蓋伺服器） */
+  peek: defs => {
+    const out = {};
+    let hit = 0;
+    Object.keys(defs).forEach(k => {
+      const local = localStorage.getItem('ylbk_' + k);
+      if (local !== null) {
+        try { out[k] = JSON.parse(local); hit++; return; } catch(_) {}
+      }
+      out[k] = defs[k];
+    });
+    return hit ? out : null;
+  },
   save: (k, v) => {
     if (!DB._loaded.has(k)) {
       console.warn('[DB save blocked]', k);
       alert('⚠️ 資料尚未從伺服器讀取完成，無法儲存，避免覆蓋現有資料。\n請重新整理頁面後再試。');
       return;
     }
-    try { localStorage.setItem('ylbk_' + k, JSON.stringify(v)); } catch(_) {}
+    // 純本機模式下 localStorage 是唯一的儲存位置，寫入失敗絕對不能靜默略過
+    try {
+      localStorage.setItem('ylbk_' + k, JSON.stringify(v));
+      localStorage.setItem('ylbk_dirty', '1');
+    } catch(e) {
+      console.error('[DB save 本機寫入失敗]', k, e.message);
+      alert('❌ 儲存失敗！資料沒有存下來。\n\n' +
+            '原因：瀏覽器本機儲存空間不足或被封鎖。\n' +
+            '（' + e.message + '）\n\n' +
+            '請不要繼續輸入，先到「設定 → 資料備份 → 下載備份檔」把現有資料存出來。');
+      return;
+    }
+    if (!CLOUD_ON()) return;
     supa.from('store').upsert({
       key: k, value: v, updated_at: new Date().toISOString()
     }).then(({ error }) => {
       if (error) {
         console.error('[DB save error]', k, error.message, error.code);
         if (error.code === '42501' || error.message.includes('policy') || error.message.includes('permission')) {
-          alert('⚠️ 儲存失敗：資料庫權限不足。\n請聯絡系統管理員設定 Supabase RLS 權限。\n\n錯誤：' + error.message);
+          DB._warnOnce('⚠️ 雲端儲存失敗：資料庫權限不足。\n請聯絡系統管理員設定 Supabase RLS 權限。\n\n錯誤：' + error.message);
         } else {
-          alert('⚠️ 儲存失敗，請檢查網路連線。\n錯誤：' + error.message);
+          DB._warnOnce('⚠️ 雲端儲存失敗，請檢查網路連線。\n錯誤：' + error.message);
         }
       }
-    }).catch(e => { console.error('[DB save catch]', k, e.message); });
+    }).catch(e => {
+      // 舊版這裡只有 console.error，導致伺服器失效時完全沒有任何提示
+      console.error('[DB save catch]', k, e.message);
+      DB._warnOnce('⚠️ 無法連線到雲端伺服器，資料只存在這台電腦。\n\n' +
+                   '在修好之前：\n' +
+                   '• 其他電腦看不到你現在輸入的資料\n' +
+                   '• 清除瀏覽器資料就會遺失\n\n' +
+                   '請立即到「設定 → 資料備份 → 下載備份檔」備份。\n\n錯誤：' + e.message);
+    });
   },
   exportAll: () => {
     const keys = ['yl-orders-v4','yl-customers-v4','yl-prices-v2','yl-costs','yl-products','yl-purchases','yl-receivables','yl-manual-rec','yl-colors','yl-color-surcharge','yl-suppliers'];
@@ -3786,6 +3898,10 @@ const DB = {
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = '勇龍備份_' + new Date().toISOString().slice(0,10) + '.json'; a.click();
+    try {
+      localStorage.removeItem('ylbk_dirty');
+      localStorage.setItem('ylbk_lastbackup', new Date().toISOString());
+    } catch(_) {}
   },
   importAll: (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -8127,7 +8243,7 @@ function PasswordTab({
       margin: '20px 0',
       borderColor: '#e2e8f0'
     }
-  }), /*#__PURE__*/React.createElement("div", {style:{marginBottom:20}}, /*#__PURE__*/React.createElement("div", {style:{fontWeight:600,fontSize:13,marginBottom:6,color:'#1a2744',borderBottom:'1px solid #eef1f6',paddingBottom:6}}, "💾 資料備份"), /*#__PURE__*/React.createElement("div", {style:{fontSize:12,color:'#888',marginBottom:10}}, "建議每週下載一次備份檔。Supabase 故障時，app 會自動使用本機快取，不會顯示空白。"), /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,flexWrap:'wrap'}}, /*#__PURE__*/React.createElement("button", {className:"btn btn-gold",onClick:DB.exportAll}, "⬇ 下載備份檔"), /*#__PURE__*/React.createElement("label", {style:{display:'inline-flex',alignItems:'center',gap:5,padding:'6px 14px',borderRadius:6,border:'1px solid #ccd2dc',background:'#fff',cursor:'pointer',fontSize:12,color:'#444',fontFamily:'inherit'}}, "⬆ 匯入備份檔", /*#__PURE__*/React.createElement("input", {type:"file",accept:".json",style:{display:'none'},onChange:async e=>{const file=e.target.files[0];if(!file)return;try{const n=await DB.importAll(file);alert('還原成功！共 '+n+' 筆資料，請重新整理頁面。');e.target.value='';}catch(err){alert('還原失敗：'+err.message);}}})))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {style:{marginBottom:20}}, /*#__PURE__*/React.createElement("div", {style:{fontWeight:600,fontSize:13,marginBottom:6,color:'#1a2744',borderBottom:'1px solid #eef1f6',paddingBottom:6}}, "💾 資料備份"), /*#__PURE__*/React.createElement("div", {style:{fontSize:12,color:'#888',marginBottom:10}}, "⚠️ 目前為「純本機模式」：雲端伺服器已失效，資料只存在這台電腦的瀏覽器裡，不會跟其他電腦同步。app 每天會自動下載一次備份檔；重要資料輸入完請手動再按一次下載。換電腦操作前，請先在這台下載備份，再到另一台匯入。"), /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,flexWrap:'wrap'}}, /*#__PURE__*/React.createElement("button", {className:"btn btn-gold",onClick:DB.exportAll}, "⬇ 下載備份檔"), /*#__PURE__*/React.createElement("label", {style:{display:'inline-flex',alignItems:'center',gap:5,padding:'6px 14px',borderRadius:6,border:'1px solid #ccd2dc',background:'#fff',cursor:'pointer',fontSize:12,color:'#444',fontFamily:'inherit'}}, "⬆ 匯入備份檔", /*#__PURE__*/React.createElement("input", {type:"file",accept:".json",style:{display:'none'},onChange:async e=>{const file=e.target.files[0];if(!file)return;try{const n=await DB.importAll(file);alert('還原成功！共 '+n+' 筆資料，請重新整理頁面。');e.target.value='';}catch(err){alert('還原失敗：'+err.message);}}})))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 600,
       fontSize: 13,
@@ -8215,12 +8331,40 @@ function App() {
   const ALL_TABS = [['orders', '📋 銷貨單管理'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['monthly', '📈 月銷售報表'], ['settings', '⚙️ 設定']];
   const visibleTabs = loggedIn ? ALL_TABS : [['orders', '📋 銷貨單管理']];
   useEffect(() => {
+    const DEFS = {
+      'yl-orders-v4': INIT_ORDERS,
+      'yl-customers-v4': INIT_C,
+      'yl-prices-v2': INIT_P,
+      'yl-costs': INIT_COSTS,
+      'yl-products': INIT_PRODS,
+      'yl-colors': COLORS,
+      'yl-color-surcharge': {},
+      'yl-receivables': {},
+      'yl-manual-rec': [],
+      'yl-purchases': INIT_PURCHASES,
+      'yl-suppliers': []
+    };
+    const apply = d => {
+      setOrders(d['yl-orders-v4']);
+      setCustomers(d['yl-customers-v4']);
+      setPrices(d['yl-prices-v2']);
+      setCosts(d['yl-costs']);
+      setProducts(d['yl-products']);
+      setColors(d['yl-colors']);
+      setColorSurcharge(d['yl-color-surcharge']);
+      setReceivables(d['yl-receivables']);
+      setManualRec(d['yl-manual-rec']);
+      setPurchases(d['yl-purchases']);
+      setSuppliers(d['yl-suppliers']);
+      setLoaded(true);
+    };
+    // 先用本機快取立刻上畫面，不等網路；伺服器資料回來後再覆蓋
+    const cached = DB.peek(DEFS);
+    if (cached) apply(cached);
     (async () => {
-      let o = await DB.load('yl-orders-v4', INIT_ORDERS);
-      const c = await DB.load('yl-customers-v4', INIT_C);
-      const p = await DB.load('yl-prices-v2', INIT_P);
-      const cc = await DB.load('yl-costs', INIT_COSTS);
-      let pp = await DB.load('yl-products', INIT_PRODS);
+      const d = await DB.loadMany(DEFS); // 1 次查詢取代原本 11 次序列 round-trip
+      let o = d['yl-orders-v4'];
+      let pp = d['yl-products'];
       let needSave = false;
       pp = pp.map(prod => {
         const upd = {};
@@ -8281,33 +8425,21 @@ function App() {
         } : order;
       });
       if (ordNeedSave) DB.save('yl-orders-v4', o);
-      const cl = await DB.load('yl-colors', COLORS);
-      const cs = await DB.load('yl-color-surcharge', {});
-      const rv = await DB.load('yl-receivables', {});
-      const mr = await DB.load('yl-manual-rec', []);
-      const pu = await DB.load('yl-purchases', INIT_PURCHASES);
-      const su = await DB.load('yl-suppliers', []);
-      setOrders(o);
-      setCustomers(c);
-      setPrices(p);
-      setCosts(cc);
-      setProducts(pp);
-      setColors(cl);
-      setColorSurcharge(cs);
-      setReceivables(rv);
-      setManualRec(mr);
-      setPurchases(pu);
-      setSuppliers(su);
-      setLoaded(true);
+      apply({
+        ...d,
+        'yl-orders-v4': o,
+        'yl-products': pp
+      });
     })();
   }, []);
   useEffect(() => {
     if (!loaded) return;
-    const mo = new Date().toISOString().slice(0, 7);
-    if (localStorage.getItem('ylbk_auto_' + mo)) return;
+    // 純本機模式下資料只存在這台電腦，備份從「每月一次」改成「每天一次」
+    const day = new Date().toISOString().slice(0, 10);
+    if (localStorage.getItem('ylbk_auto_' + day)) return;
     setTimeout(() => {
       DB.exportAll();
-      localStorage.setItem('ylbk_auto_' + mo, '1');
+      localStorage.setItem('ylbk_auto_' + day, '1');
     }, 2500);
   }, [loaded]);
   const saveOrder = order => {
