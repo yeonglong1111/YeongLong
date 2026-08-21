@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>勇龍有限公司 銷貨管理系統</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="preconnect" href="https://akzdbdcutvolydlhjoug.supabase.co" crossorigin>
+<link rel="preconnect" href="https://btsydqgakxcmkmwhepat.supabase.co" crossorigin>
 <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
-<link rel="dns-prefetch" href="https://akzdbdcutvolydlhjoug.supabase.co">
+<link rel="dns-prefetch" href="https://btsydqgakxcmkmwhepat.supabase.co">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:"Microsoft JhengHei","PingFang TC","Noto Sans CJK TC",sans-serif;font-size:13px;background:#f4f6f9;color:#2d2d2d;min-height:100vh}
@@ -3737,19 +3737,12 @@ const fmtN = n => Number(n).toLocaleString();
 const uid = () => Math.random().toString(36).slice(2, 8);
 
 /* ===== SUPABASE DATABASE =====
- * 2026-08-21：原 Supabase 專案 akzdbdcutvolydlhjoug 已失效（DNS NXDOMAIN，專案被刪除或回收）。
- * 每一次讀寫都失敗，且舊程式碼只寫 console 不跳警告，導致兩台電腦各自使用本機快取而分岔。
- * 目前改為「純本機模式」：CLOUD_ENABLED = false。
- *
- * 之後要重新接上雲端，只要做兩件事：
- *   1) 把 SUPA_URL / SUPA_KEY 換成新專案的值
- *   2) 把 CLOUD_ENABLED 改成 true
- * 新專案需要一張 store 表：key (text, primary key), value (jsonb), updated_at (timestamptz)
- * 並設定 RLS 允許 anon 讀寫。
+ * 2026-08-21：原專案 akzdbdcutvolydlhjoug 已失效，資料已搬到新專案 btsydqgakxcmkmwhepat
+ * （搬遷前已核對本機備份與舊雲端資料逐筆一致，確認無資料遺失）。CLOUD_ENABLED 重新開啟。
  */
-const CLOUD_ENABLED = false;
-const SUPA_URL = 'https://akzdbdcutvolydlhjoug.supabase.co';
-const SUPA_KEY = 'sb_publishable_aGTsFRXyJgTHiSkQFVqzNA_JsG1h7LP';
+const CLOUD_ENABLED = true;
+const SUPA_URL = 'https://btsydqgakxcmkmwhepat.supabase.co';
+const SUPA_KEY = 'sb_publishable_kmaL7A--cvvnSeCiv3Q04w_F0emzHuH';
 // CDN 掛掉或雲端關閉時不要讓整個 app 當掉
 let supa = null;
 if (CLOUD_ENABLED) {
@@ -8243,7 +8236,7 @@ function PasswordTab({
       margin: '20px 0',
       borderColor: '#e2e8f0'
     }
-  }), /*#__PURE__*/React.createElement("div", {style:{marginBottom:20}}, /*#__PURE__*/React.createElement("div", {style:{fontWeight:600,fontSize:13,marginBottom:6,color:'#1a2744',borderBottom:'1px solid #eef1f6',paddingBottom:6}}, "💾 資料備份"), /*#__PURE__*/React.createElement("div", {style:{fontSize:12,color:'#888',marginBottom:10}}, "⚠️ 目前為「純本機模式」：雲端伺服器已失效，資料只存在這台電腦的瀏覽器裡，不會跟其他電腦同步。app 每天會自動下載一次備份檔；重要資料輸入完請手動再按一次下載。換電腦操作前，請先在這台下載備份，再到另一台匯入。"), /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,flexWrap:'wrap'}}, /*#__PURE__*/React.createElement("button", {className:"btn btn-gold",onClick:DB.exportAll}, "⬇ 下載備份檔"), /*#__PURE__*/React.createElement("label", {style:{display:'inline-flex',alignItems:'center',gap:5,padding:'6px 14px',borderRadius:6,border:'1px solid #ccd2dc',background:'#fff',cursor:'pointer',fontSize:12,color:'#444',fontFamily:'inherit'}}, "⬆ 匯入備份檔", /*#__PURE__*/React.createElement("input", {type:"file",accept:".json",style:{display:'none'},onChange:async e=>{const file=e.target.files[0];if(!file)return;try{const n=await DB.importAll(file);alert('還原成功！共 '+n+' 筆資料，請重新整理頁面。');e.target.value='';}catch(err){alert('還原失敗：'+err.message);}}})))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {style:{marginBottom:20}}, /*#__PURE__*/React.createElement("div", {style:{fontWeight:600,fontSize:13,marginBottom:6,color:'#1a2744',borderBottom:'1px solid #eef1f6',paddingBottom:6}}, "💾 資料備份"), /*#__PURE__*/React.createElement("div", {style:{fontSize:12,color:'#888',marginBottom:10}}, CLOUD_ON() ? "✅ 雲端同步已啟用，資料會自動同步到所有電腦。仍建議定期下載備份檔留存。" : "⚠️ 目前為「純本機模式」：雲端伺服器已失效，資料只存在這台電腦的瀏覽器裡，不會跟其他電腦同步。app 每天會自動下載一次備份檔；重要資料輸入完請手動再按一次下載。換電腦操作前，請先在這台下載備份，再到另一台匯入。"), /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,flexWrap:'wrap'}}, /*#__PURE__*/React.createElement("button", {className:"btn btn-gold",onClick:DB.exportAll}, "⬇ 下載備份檔"), /*#__PURE__*/React.createElement("label", {style:{display:'inline-flex',alignItems:'center',gap:5,padding:'6px 14px',borderRadius:6,border:'1px solid #ccd2dc',background:'#fff',cursor:'pointer',fontSize:12,color:'#444',fontFamily:'inherit'}}, "⬆ 匯入備份檔", /*#__PURE__*/React.createElement("input", {type:"file",accept:".json",style:{display:'none'},onChange:async e=>{const file=e.target.files[0];if(!file)return;try{const n=await DB.importAll(file);alert('還原成功！共 '+n+' 筆資料，請重新整理頁面。');e.target.value='';}catch(err){alert('還原失敗：'+err.message);}}})))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 600,
       fontSize: 13,
