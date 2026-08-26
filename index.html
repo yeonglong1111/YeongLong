@@ -3727,7 +3727,15 @@ const toROCM = iso => {
   return `${d.getFullYear() - 1911}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 const getON = iso => toROC(iso).replace(/-/g, '');
+const getQN = iso => 'YL' + toROC(iso).replace(/-/g, '');
+const DEFAULT_QUOTE_NOTE = '1. 本報價單有效期限為 10 天，逾期原物料或成本如有異動將另行報價，恕不適用舊價下單。\n2. 付款條件：訂金 50%、尾款 50%（匯款或即期支票）或全額付款。\n3. 以上金額均為未稅價，另加 5% 營業稅。';
 const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (iso, n) => {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+const h = React.createElement;
 const getUP = (prices, name, prod) => {
   const cat = PCAT[prod];
   return (prices[name] || STD)[cat] || STD[cat] || 0;
@@ -3884,7 +3892,7 @@ const DB = {
     });
   },
   exportAll: () => {
-    const keys = ['yl-orders-v4','yl-customers-v4','yl-prices-v2','yl-costs','yl-products','yl-purchases','yl-receivables','yl-manual-rec','yl-colors','yl-color-surcharge','yl-suppliers'];
+    const keys = ['yl-orders-v4','yl-customers-v4','yl-prices-v2','yl-costs','yl-products','yl-purchases','yl-receivables','yl-manual-rec','yl-colors','yl-color-surcharge','yl-suppliers','yl-quotes'];
     const backup = { exportedAt: new Date().toISOString(), version: 1, data: {} };
     keys.forEach(k => { const v = localStorage.getItem('ylbk_' + k); if (v) try { backup.data[k] = JSON.parse(v); } catch(_) {} });
     if (!Object.keys(backup.data).length) { alert('本機尚無快取資料，請先正常開啟一次 app 讓資料載入後再匯出。'); return; }
@@ -4122,6 +4130,185 @@ function printDoc(order, cust, showPrices) {
   const w = window.open('', '_blank', 'width=820,height=800');
   if (!w) return;
   w.document.write(genPrintHTML(order, cust, showPrices));
+  w.document.close();
+}
+
+/* ===== QUOTATION PRINT ===== */
+function genQuotePrintHTML(quote, cust) {
+  const roc = toROC(quote.date);
+  const title = '報價單';
+  const items = quote.items || [];
+  const hasTax = quote.taxType === '未稅' || quote.taxType === '含稅';
+  const qBase = (quote.subtotal != null ? quote.subtotal : items.reduce((s, i) => s + (i.amount || 0), 0)) + (quote.shipping || 0);
+  const total = quote.total != null ? quote.total : (quote.taxType === '未稅' ? qBase + Math.round(qBase * 0.05) : qBase);
+  const qTax = !hasTax ? 0 : (quote.tax != null ? quote.tax : total - Math.round(total / 1.05));
+  const qNet = total - qTax;
+  const cols = 8;
+
+  const rowsData = [];
+  items.forEach((item, i) => {
+    const d = item.orderDate ? toROC(item.orderDate).replace(/-/g, '') : roc.replace(/-/g, '');
+    rowsData.push(`<td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product} ${item.color}</td><td>${item.size}</td><td>${item.qty}</td><td>${item.unitPrice}</td><td>${fmtN(item.amount)}</td><td>${item.note || ''}</td>`);
+  });
+  if (quote.shipping > 0) rowsData.push(`<td>${items.length + 1}</td><td></td><td style="text-align:left;padding-left:4px">運費</td><td></td><td>1</td><td></td><td>${fmtN(quote.shipping)}</td><td></td>`);
+
+  const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
+  const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div><div class="ir"><span class="ib">報價單號：</span><span>${quote.quoteNumber || ''}</span></div><div class="ir"><span class="ib">報價日期：</span><span>${roc}</span></div><div class="ir"><span class="ib">有效期限：</span><span>${quote.validUntil ? toROC(quote.validUntil) : '—'}</span></div></div></div>`;
+  const chH = `<th style="width:4%">No.</th><th style="width:9%">日期</th><th style="width:29%;text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:12%">金額</th><th style="width:14%">備註</th>`;
+  const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　Line ID：${COMPANY.line}</div></div>`;
+  const signH = `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${hasTax ? fmtN(qNet) : fmtN(total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">${quote.taxType === '含稅' ? '內含營業稅 5%' : '營業稅 5%'}</td><td colspan="2">${hasTax ? fmtN(qTax) : ''}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2">${hasTax ? fmtN(total) : ''}</td></tr>`;
+  const lItems = items.filter(it => it.product && it.product.includes('L型') && it.lDir);
+  const lDiagH = lItems.length ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:18px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:10pt;font-weight:bold;margin-bottom:2px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:10pt;color:#555;margin-bottom:3px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB, 2.2) + '</div>').join('') + '</div>' : '';
+  const noteTxt = (quote.note || '').replace(/\n/g, '<br>');
+  const noteBody = `<strong>備註：</strong>${noteTxt ? '<br>' + noteTxt : ''}`;
+  const noteH = (quote.note || lDiagH) ? `<tr><td colspan="${cols}" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000;line-height:1.5">${noteBody}${lDiagH}</td></tr>` : '';
+  const noteBigH = (quote.note || lDiagH) ? `<div style="padding:8px 10px"><div style="font-size:12pt;line-height:1.6">${noteBody}</div>${lDiagH}</div>` : '';
+  const measRows = rowsData.map(tds => `<tr class="dr">${tds}</tr>`).join('');
+  const D = JSON.stringify({
+    r: rowsData,
+    hdr: hdrH,
+    info: infoH,
+    ch: chH,
+    ftr: ftrH,
+    sign: signH,
+    note: noteH,
+    noteBig: noteBigH,
+    title
+  }).replace(/\//g, '\\/');
+  const css = `@page{size:21.4cm 14cm;margin:5mm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Microsoft JhengHei","PingFang TC",sans-serif;font-size:11pt;color:#000}
+#meas{position:absolute;top:0;left:0;visibility:hidden;width:calc(21.4cm - 10mm)}
+.page{width:100%;border:2px solid #000;page-break-after:always}
+.last{page-break-after:auto}
+.hdr{text-align:center;padding:5px 8px 0}
+.hdr h1{font-size:20pt;font-weight:700;letter-spacing:2px}
+.hdr h2{font-size:7pt;letter-spacing:1px}
+.ttl{text-align:center;font-size:16pt;font-weight:700;padding:2px 8px 2px}
+.pg{font-size:10pt;font-weight:400}
+.info{display:grid;grid-template-columns:1fr 1fr;padding:0 8px 4px;font-size:12pt;border-bottom:1px solid #000}
+.ir{display:flex;align-items:baseline;margin-bottom:2px}
+.ib{font-weight:700;white-space:nowrap;min-width:60px}
+table{width:100%;border-collapse:collapse;font-size:11pt}
+th,td{border:1px solid #000;padding:2px 3px;text-align:center;vertical-align:middle;color:#000;background:#fff}
+th{font-weight:700;font-size:11pt}
+tr.dr:nth-child(even) td{background:#eef1f6}
+.tr td{font-weight:700;font-size:11pt}
+.sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:11pt;padding:2px 1px;white-space:nowrap}
+.footer{padding:2px 8px;font-size:11pt;border-top:1px solid #000}
+@media print{#meas{display:none}tr.dr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}`;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
+<style>${css}</style></head><body>
+<div id="meas">
+  <div id="mh">${hdrH}<div class="ttl">${title}</div>${infoH}</div>
+  <div id="mch"><table><thead><tr>${chH}</tr></thead></table></div>
+  <div id="mr"><table><tbody>${measRows}</tbody></table></div>
+  <div id="ms"><table><tbody>${signH}</tbody></table></div>
+  ${noteH ? `<div id="mn"><table><tbody>${noteH}</tbody></table></div>` : ''}
+  <div id="mf">${ftrH}</div>
+</div>
+<div id="out"></div>
+<script>
+var D=${D};
+window.onload=function(){
+  var ref=document.createElement('div');
+  ref.style.cssText='position:absolute;top:0;left:0;height:calc(14cm - 10mm);visibility:hidden;pointer-events:none';
+  document.body.appendChild(ref);
+  var PH=ref.offsetHeight;
+  document.body.removeChild(ref);
+  var mhH=document.getElementById('mh').offsetHeight;
+  var mchH=document.getElementById('mch').offsetHeight;
+  var msH=document.getElementById('ms').offsetHeight;
+  var mfH=document.getElementById('mf').offsetHeight;
+  var mnEl=document.getElementById('mn');
+  var mnH=mnEl?mnEl.offsetHeight:0;
+  var drs=document.querySelectorAll('#mr .dr');
+  var rh=[].map.call(drs,function(el){return el.offsetHeight;});
+  document.getElementById('meas').remove();
+  var ovh=mhH+mchH+mfH;
+  var pages=[];var cur=[];var usedH=0;
+  for(var i=0;i<rh.length;i++){
+    if(usedH+rh[i]<=PH-4-ovh){cur.push(i);usedH+=rh[i];}
+    else{if(cur.length){pages.push(cur.slice());}cur=[i];usedH=rh[i];}
+  }
+  if(cur.length)pages.push(cur);
+  var lp=pages[pages.length-1];
+  var lh=lp.reduce(function(s,i){return s+rh[i];},0);
+  while(lh+ovh+msH>PH-4&&lp.length>1){
+    var mv=lp.pop();lh-=rh[mv];
+    var np=[mv];pages.push(np);lp=np;lh=rh[mv];
+  }
+  function buildRowsOnly(){
+    var tp=pages.length;
+    var out=document.getElementById('out');
+    out.innerHTML='';
+    for(var p=0;p<tp;p++){
+      var pr=pages[p];var isLast=p===tp-1;
+      var pg=tp>1?'　<span class="pg">(第'+(p+1)+'頁/共'+tp+'頁)</span>':'';
+      var rows='';for(var k=0;k<pr.length;k++)rows+='<tr class="dr">'+D.r[pr[k]]+'</tr>';
+      var div=document.createElement('div');
+      div.className='page'+(isLast?' last':'');
+      div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
+        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLast?D.sign:'')+'</tbody></table>'
+        +D.ftr;
+      out.appendChild(div);
+    }
+  }
+  for(var iter=0;iter<20;iter++){
+    buildRowsOnly();
+    var divs=document.getElementById('out').querySelectorAll('.page');
+    var changed=false;
+    for(var p=0;p<divs.length;p++){
+      if(divs[p].offsetHeight>PH&&pages[p].length>1){
+        var mv2=pages[p].pop();
+        if(p+1>=pages.length)pages.push([mv2]);
+        else pages[p+1].unshift(mv2);
+        changed=true;
+      }
+    }
+    if(!changed)break;
+  }
+  buildRowsOnly();
+  var lastDivs=document.getElementById('out').querySelectorAll('.page');
+  var lastUsedH=lastDivs.length?lastDivs[lastDivs.length-1].offsetHeight:0;
+  var splitNote=mnH>0&&(lastUsedH+mnH>PH-4);
+  function build(){
+    var tp=pages.length;
+    var totalPages=tp+(splitNote?1:0);
+    var out=document.getElementById('out');
+    out.innerHTML='';
+    for(var p=0;p<tp;p++){
+      var pr=pages[p];var isLastRowsPage=p===tp-1;
+      var isVeryLast=isLastRowsPage&&!splitNote;
+      var pg=totalPages>1?'　<span class="pg">(第'+(p+1)+'頁/共'+totalPages+'頁)</span>':'';
+      var rows='';for(var k=0;k<pr.length;k++)rows+='<tr class="dr">'+D.r[pr[k]]+'</tr>';
+      var tail='';
+      if(isLastRowsPage)tail=(splitNote?'':D.note)+D.sign;
+      var div=document.createElement('div');
+      div.className='page'+(isVeryLast?' last':'');
+      div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
+        +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+tail+'</tbody></table>'
+        +D.ftr;
+      out.appendChild(div);
+    }
+    if(splitNote){
+      var pg2=totalPages>1?'　<span class="pg">(第'+totalPages+'頁/共'+totalPages+'頁)</span>':'';
+      var ndiv=document.createElement('div');
+      ndiv.className='page last';
+      ndiv.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg2+'</div>'+D.info+D.noteBig+D.ftr;
+      out.appendChild(ndiv);
+    }
+  }
+  build();
+  setTimeout(function(){window.print();},500);
+};
+<\/script>
+</body></html>`;
+}
+function printQuoteDoc(quote, cust) {
+  const w = window.open('', '_blank', 'width=820,height=800');
+  if (!w) return;
+  w.document.write(genQuotePrintHTML(quote, cust));
   w.document.close();
 }
 
@@ -5917,6 +6104,691 @@ function PurchaseView({
     onClose: () => setEditPO(null),
     supplierList: supplierList
   }));
+}
+
+/* ===== NEW QUOTE MODAL ===== */
+function NewQuoteModal({
+  customers,
+  setCustomers,
+  prices,
+  setPrices,
+  products,
+  colors,
+  colorSurcharge = {},
+  onSave,
+  onClose
+}) {
+  const [custName, setCustName] = useState(customers[0]?.name || '');
+  const [contact, setContact] = useState(customers[0]?.contact || '');
+  const [phone, setPhone] = useState(customers[0]?.phone || '');
+  const [address, setAddress] = useState(customers[0]?.address || '');
+  const [date, setDate] = useState(today());
+  const [validUntil, setValidUntil] = useState(addDays(today(), 10));
+  const [status, setStatus] = useState('待回覆');
+  const [items, setItems] = useState([]);
+  const [shipping, setShipping] = useState(0);
+  const [note, setNote] = useState(DEFAULT_QUOTE_NOTE);
+  const [taxType, setTaxType] = useState('未稅');
+  const [totalManual, setTotalManual] = useState(false);
+  const [totalInput, setTotalInput] = useState(0);
+  const cust = customers.find(c => c.name === custName.trim());
+  const defProd = products[0]?.name || 'ㄇ 6*6*6';
+  const isPerCm = name => {
+    const p = products.find(x => x.name === name);
+    if (p?.perCm === false) return false;
+    if (p?.priceCat && STD[p.priceCat] !== undefined) return true;
+    if (PCAT[name]) return true;
+    return p ? p.perCm !== false : false;
+  };
+  const isLType = name => !!(name && name.includes('L型'));
+  const buildLNote = (dir, a, b) => `L ${dir} ${a || 0}*${b || 0}`;
+  const renderLDiagram = (dir, a, b) => {
+    const W = 150, H = 110, T = 24;
+    const D = {
+      '左下': {pts: `0,0 ${T},0 ${T},${H-T} ${W},${H-T} ${W},${H} 0,${H}`, bx: T/2, by: (H-T)/2, br: -90, ax: (T+W)/2, ay: (H-T+H)/2},
+      '左上': {pts: `0,0 ${W},0 ${W},${T} ${T},${T} ${T},${H} 0,${H}`,       bx: T/2, by: (T+H)/2, br: -90, ax: (T+W)/2, ay: T/2},
+      '右下': {pts: `0,${H-T} 0,${H} ${W},${H} ${W},0 ${W-T},0 ${W-T},${H-T}`, bx: W-T/2, by: (H-T)/2, br: -90, ax: (W-T)/2, ay: (H-T+H)/2},
+      '右上': {pts: `0,0 ${W},0 ${W},${H} ${W-T},${H} ${W-T},${T} 0,${T}`,   bx: W-T/2, by: (T+H)/2, br: -90, ax: (W-T)/2, ay: T/2}
+    };
+    const s = D[dir] || D['左下'];
+    return h("svg", {width: W, height: H, style: {display: 'block', margin: '6px 0 2px 0', flexShrink: 0}},
+      h("polygon", {points: s.pts, fill: '#c8dff8', stroke: '#1a4d8f', strokeWidth: 2}),
+      h("text", {x: s.bx, y: s.by + 4, textAnchor: 'middle', transform: `rotate(${s.br},${s.bx},${s.by})`, fill: '#1a4d8f', fontSize: 10, fontWeight: 'bold'}, 'B=' + (b || 0) + 'cm'),
+      h("text", {x: s.ax, y: s.ay + 4, textAnchor: 'middle', fill: '#c0392b', fontSize: 10, fontWeight: 'bold'}, 'A=' + (a || 0) + 'cm')
+    );
+  };
+  const getPrice = (custName, productName, color) => {
+    const p = products.find(x => x.name === productName);
+    const cat = p?.priceCat || PCAT[productName];
+    if (cat) return ((prices[custName] || STD)[cat] || 0) + (colorSurcharge[color] || 0);
+    return p?.defaultPrice || 0;
+  };
+  const calcAmt = item => {
+    if (isPerCm(item.product)) return Math.round(item.size * item.qty * item.unitPrice);
+    return Math.round((item.qty || 0) * (item.unitPrice || 0));
+  };
+  useEffect(() => {
+    if (custName) {
+      const color = (colors || COLORS)[0] || '白';
+      const up = getPrice(custName, defProd, color);
+      const amt = isPerCm(defProd) ? Math.round(160 * 1 * up) : Math.round(1 * up);
+      const initItem = isPerCm(defProd) ? {
+        id: uid(), product: defProd, color, size: 160, qty: 1, unitPrice: up, amount: amt
+      } : {
+        id: uid(), product: defProd, color: '', size: 0, qty: 1, unitPrice: up, amount: amt
+      };
+      setItems([initItem]);
+    }
+  }, []);
+  const updItem = (idx, field, val) => {
+    setItems(prev => {
+      const arr = [...prev];
+      const updated = {
+        ...arr[idx],
+        [field]: ['size', 'qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
+      };
+      if (field === 'product') {
+        if (isPerCm(val)) {
+          updated.size = updated.size || 160;
+          updated.color = updated.color || (colors || COLORS)[0] || '白';
+        } else {
+          updated.size = 0;
+          updated.qty = updated.qty || 1;
+        }
+        updated.unitPrice = getPrice(custName, val, updated.color);
+        if (isLType(val)) {
+          if (!updated.lDir) updated.lDir = '左下';
+          if (!updated.lSideA) updated.lSideA = 0;
+          if (!updated.lSideB) updated.lSideB = 0;
+          updated.note = buildLNote(updated.lDir, updated.lSideA, updated.lSideB);
+        }
+      } else if (field === 'color') {
+        updated.unitPrice = getPrice(custName, updated.product, val);
+      } else if (field === 'lDir' || field === 'lSideA' || field === 'lSideB') {
+        updated.note = buildLNote(updated.lDir, updated.lSideA, updated.lSideB);
+      }
+      if (field !== 'amount') updated.amount = calcAmt(updated);
+      arr[idx] = updated;
+      return arr;
+    });
+  };
+  const addItem = () => {
+    const color = (colors || COLORS)[0] || '白';
+    const up = getPrice(custName, defProd, color);
+    const newItem = {
+      id: uid(), product: defProd, color, size: isPerCm(defProd) ? 160 : 0, qty: 1, unitPrice: up
+    };
+    setItems(prev => [...prev, { ...newItem, amount: calcAmt(newItem) }]);
+  };
+  const delItem = idx => setItems(prev => prev.filter((_, i) => i !== idx));
+  const moveItem = (idx, dir) => setItems(prev => {
+    const a = [...prev];
+    const b = idx + dir;
+    if (b < 0 || b >= a.length) return a;
+    [a[idx], a[b]] = [a[b], a[idx]];
+    return a;
+  });
+  const handleCustName = v => {
+    setCustName(v);
+    const found = customers.find(c => c.name === v.trim());
+    if (found) {
+      setContact(found.contact || '');
+      setPhone(found.phone || '');
+      setAddress(found.address || '');
+    }
+    setItems(prev => prev.map(item => {
+      const up = getPrice(v, item.product, item.color);
+      const updated = { ...item, unitPrice: up };
+      return { ...updated, amount: calcAmt(updated) };
+    }));
+  };
+  const subtotal = items.reduce((s, i) => s + i.amount, 0);
+  const preTax = subtotal + Number(shipping || 0);
+  const tax = taxType === '未稅' ? Math.round(preTax * 0.05) : taxType === '含稅' ? preTax - Math.round(preTax / 1.05) : 0;
+  const autoTotal = taxType === '未稅' ? preTax + tax : preTax;
+  const total = totalManual ? (Number(totalInput) || 0) : autoTotal;
+  const handleSave = () => {
+    const name = custName.trim();
+    if (!name || !date) return alert('請輸入客戶名稱和日期');
+    if (items.length === 0) return alert('請新增至少一個商品');
+    let finalCid = cust?.id;
+    if (!finalCid) {
+      const newCust = { id: 'c' + Date.now(), name, contact: contact.trim(), phone: phone.trim(), address: address.trim() };
+      const uc = [...customers, newCust];
+      setCustomers(uc);
+      DB.save('yl-customers-v4', uc);
+      if (!prices[name]) {
+        const up = { ...prices, [name]: { ...STD } };
+        setPrices(up);
+        DB.save('yl-prices-v2', up);
+      }
+      finalCid = newCust.id;
+    } else if ((cust.contact || '') !== contact.trim() || (cust.phone || '') !== phone.trim() || (cust.address || '') !== address.trim()) {
+      const uc = customers.map(c => c.id === finalCid ? { ...c, contact: contact.trim(), phone: phone.trim(), address: address.trim() } : c);
+      setCustomers(uc);
+      DB.save('yl-customers-v4', uc);
+    }
+    const quote = {
+      id: uid(),
+      customerId: finalCid,
+      date,
+      validUntil,
+      status,
+      quoteNumber: getQN(date),
+      items: items.map((it, i) => ({ ...it, no: i + 1 })),
+      extras: [],
+      shipping: Number(shipping) || 0,
+      subtotal,
+      taxType,
+      tax,
+      totalManual,
+      total,
+      note
+    };
+    onSave(quote);
+    onClose();
+  };
+  const itemRow = (item, idx) => {
+    return h("tr", { key: item.id },
+      h("td", { style: { color: '#999' } }, idx + 1),
+      h("td", null, h("input", { list: "new-quote-prod-list", value: item.product, onChange: e => updItem(idx, 'product', e.target.value), placeholder: "輸入或選擇產品", style: { width: '100%', minWidth: 110 } })),
+      h("td", null, h("select", { value: item.color, onChange: e => updItem(idx, 'color', e.target.value) }, h("option", { key: "無" }, "無"), (colors || COLORS).map(c => h("option", { key: c }, c)))),
+      h("td", null, h("input", { type: "number", value: item.size, min: "0", onChange: e => updItem(idx, 'size', e.target.value) })),
+      h("td", null, h("input", { type: "number", value: item.qty, min: "1", onChange: e => updItem(idx, 'qty', e.target.value) })),
+      h("td", null, h("input", { type: "number", step: "0.1", value: item.unitPrice, onChange: e => updItem(idx, 'unitPrice', e.target.value) })),
+      h("td", null, h("input", { type: "number", value: item.amount, onChange: e => updItem(idx, 'amount', e.target.value) })),
+      h("td", null, h("input", { value: item.note || '', onChange: e => updItem(idx, 'note', e.target.value), placeholder: "備註", style: { width: 80 } })),
+      h("td", { style: { whiteSpace: 'nowrap' } },
+        h("button", { className: "btn btn-sm", style: { padding: '2px 4px', marginRight: 2, fontSize: 12 }, onClick: () => moveItem(idx, -1), disabled: idx === 0 }, "↑"),
+        h("button", { className: "btn btn-sm", style: { padding: '2px 4px', marginRight: 2, fontSize: 12 }, onClick: () => moveItem(idx, 1), disabled: idx === items.length - 1 }, "↓"),
+        h("button", { className: "btn btn-danger btn-sm", onClick: () => delItem(idx) }, "✕")
+      )
+    );
+  };
+  return h("div", { className: "modal-bg" },
+    h("datalist", { id: "new-quote-prod-list" }, products.map(p => h("option", { key: p.id, value: p.name }))),
+    h("datalist", { id: "new-quote-cust-list" }, customers.map(c => h("option", { key: c.id, value: c.name }))),
+    h("div", { className: "modal" },
+      h("div", { className: "modal-title" },
+        h("span", null, "✦ 新增報價單"),
+        h("button", { className: "btn btn-sm", onClick: onClose }, "✕ 關閉")
+      ),
+      h("div", { className: "form-grid g3", style: { marginBottom: 12 } },
+        h("div", null, h("label", null, "選擇現有客戶"), h("select", { value: cust ? cust.id : '', onChange: e => { const c = customers.find(x => x.id === e.target.value); if (c) handleCustName(c.name); } }, h("option", { value: "" }, "— 從清單挑選 —"), customers.map(c => h("option", { key: c.id, value: c.id }, c.name)))),
+        h("div", null, h("label", null, "客戶名稱"), h("input", { list: "new-quote-cust-list", value: custName, onChange: e => handleCustName(e.target.value), placeholder: "輸入或選擇客戶（新名稱會自動加入客戶名單）" })),
+        h("div", null, h("label", null, "報價日期"), h("input", { type: "date", value: date, onChange: e => setDate(e.target.value) })),
+        h("div", null, h("label", null, "有效期限"), h("input", { type: "date", value: validUntil, onChange: e => setValidUntil(e.target.value) })),
+        h("div", null, h("label", null, "報價單號（自動產生）"), h("input", { readOnly: true, value: date ? getQN(date) : '', style: { background: '#f8fafd', color: '#1a2744', fontWeight: 500 } })),
+        h("div", null, h("label", null, "狀態"), h("select", { value: status, onChange: e => setStatus(e.target.value) }, ["待回覆", "已成交", "未成交"].map(s => h("option", { key: s }, s))))
+      ),
+      h("div", { className: "form-grid g3", style: { marginBottom: 6 } },
+        h("div", null, h("label", null, "聯絡人"), h("input", { value: contact, onChange: e => setContact(e.target.value), placeholder: "聯絡人" })),
+        h("div", null, h("label", null, "聯絡電話"), h("input", { value: phone, onChange: e => setPhone(e.target.value), placeholder: "聯絡電話" })),
+        h("div", null, h("label", null, "送貨地址"), h("input", { value: address, onChange: e => setAddress(e.target.value), placeholder: "送貨地址" }))
+      ),
+      h("div", { style: { fontSize: 11, color: cust ? '#3a8a5a' : '#c0392b', marginBottom: 10 } }, cust ? "✔ 已帶入現有客戶資料，可修改；儲存時會同步更新客戶名單" : "✦ 尚未建檔的新客戶，儲存報價單時會自動加入客戶名單"),
+      h("div", { className: "section-hdr" }, "商品項目"),
+      h("div", { style: { overflowX: 'auto' } },
+        h("table", { className: "items-table" },
+          h("thead", null, h("tr", null,
+            h("th", { style: { width: 30 } }, "No."),
+            h("th", { style: { minWidth: 120 } }, "產品"),
+            h("th", { style: { width: 55 } }, "顏色"),
+            h("th", { style: { width: 70 } }, "規格"),
+            h("th", { style: { width: 50 } }, "數量"),
+            h("th", { style: { width: 65 } }, "單價/cm"),
+            h("th", { style: { width: 75 } }, "金額(NT$)"),
+            h("th", { style: { width: 90 } }, "備註"),
+            h("th", { style: { width: 80 } })
+          )),
+          h("tbody", null, items.map(itemRow))
+        )
+      ),
+      h("div", { style: { display: 'flex', gap: 10, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' } },
+        h("button", { className: "btn btn-sm", onClick: addItem }, "＋ 新增品項"),
+        h("div", { style: { marginLeft: 'auto', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' } },
+          h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
+            h("span", { style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' } }, "運費"),
+            h("input", { type: "number", value: shipping, onChange: e => setShipping(e.target.value), style: { width: 70 } })
+          ),
+          h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
+            h("span", { style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' } }, "稅別"),
+            h("select", { value: taxType, onChange: e => setTaxType(e.target.value), style: { width: 150 } },
+              h("option", { value: "未稅" }, "未稅（外加 5% 稅）"),
+              h("option", { value: "含稅" }, "含稅價"),
+              h("option", { value: "無" }, "無（不計稅）"))
+          ),
+          h("div", { style: { fontSize: 12, color: '#666', whiteSpace: 'nowrap' } }, "小計 ", h("span", { style: { color: '#c9a84c', fontWeight: 600 } }, fmtN(subtotal)), taxType === '未稅' ? '　營業稅 ' + fmtN(tax) : taxType === '含稅' ? '　內含稅 ' + fmtN(tax) : ''),
+          h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
+            h("span", { style: { fontSize: 13, fontWeight: 600, color: '#c0392b', whiteSpace: 'nowrap' } }, "總金額"),
+            h("input", { type: "number", value: totalManual ? totalInput : autoTotal, onChange: e => { setTotalManual(true); setTotalInput(e.target.value); }, style: { width: 100, fontSize: 15, fontWeight: 600, color: '#c0392b' } }),
+            totalManual && h("button", { className: "btn btn-sm", style: { padding: '2px 6px' }, title: "改回自動計算", onClick: () => { setTotalManual(false); setTotalInput(autoTotal); } }, "↻")
+          )
+        )
+      ),
+      h("div", { style: { marginBottom: 14 } }, h("label", null, "備註（會印在報價單上，可自行增減）"), h("textarea", { value: note, onChange: e => setNote(e.target.value), rows: 5, placeholder: "選填備註", style: { width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.6 } })),
+      items.some(it => isLType(it.product)) && h("div", { style: { background: '#eef6ff', border: '1px solid #b8d4f8', borderRadius: 8, padding: '10px 14px', marginBottom: 12 } },
+        h("div", { style: { fontWeight: 600, color: '#1a4d8f', marginBottom: 8, fontSize: 13 } }, "🔧 L型設定"),
+        h("div", { style: { fontFamily: 'monospace', fontSize: 12, background: '#fff', border: '1px solid #d0e4f8', borderRadius: 4, padding: '6px 10px', marginBottom: 10, color: '#444', lineHeight: 1.7 } },
+          "A邊＝橫向長度（水平）　B邊＝縱向長度（垂直）", h("br", null), "┌ 左上：A→右  B↓下　　┐ 右上：A←左  B↓下", h("br", null), "└ 左下：A→右  B↑上　　┘ 右下：A←左  B↑上"
+        ),
+        items.filter(it => isLType(it.product)).map(it => h("div", { key: it.id, style: { marginBottom: 10 } },
+          h("div", { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4, fontSize: 13 } },
+            h("span", { style: { color: '#1a4d8f', fontWeight: 600, minWidth: 70 } }, "項目 #", items.indexOf(it) + 1, "："),
+            h("span", null, "開口方向"),
+            h("select", { value: it.lDir || '左下', onChange: e => updItem(items.indexOf(it), 'lDir', e.target.value), style: { width: 90, padding: '2px 4px' } },
+              h("option", { value: "左上" }, "┌ 左上"), h("option", { value: "右上" }, "┐ 右上"), h("option", { value: "左下" }, "└ 左下"), h("option", { value: "右下" }, "┘ 右下")
+            ),
+            h("span", null, "A邊(cm)"),
+            h("input", { type: "number", value: it.lSideA || 0, min: "0", onChange: e => updItem(items.indexOf(it), 'lSideA', e.target.value), style: { width: 65 } }),
+            h("span", null, "B邊(cm)"),
+            h("input", { type: "number", value: it.lSideB || 0, min: "0", onChange: e => updItem(items.indexOf(it), 'lSideB', e.target.value), style: { width: 65 } }),
+            h("span", { style: { color: '#888', fontSize: 11, fontStyle: 'italic' } }, "→ ", it.note)
+          ),
+          renderLDiagram(it.lDir || '左下', it.lSideA, it.lSideB)
+        ))
+      ),
+      h("div", { style: { display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid #eef1f6', paddingTop: 12 } },
+        h("button", { className: "btn", onClick: onClose }, "取消"),
+        h("button", { className: "btn btn-primary", onClick: handleSave }, "💾 儲存報價單")
+      )
+    )
+  );
+}
+
+/* ===== EDIT QUOTE MODAL ===== */
+function EditQuoteModal({
+  quote,
+  customers,
+  setCustomers,
+  prices,
+  setPrices,
+  products,
+  colors,
+  colorSurcharge = {},
+  onUpdate,
+  onClose
+}) {
+  const _initCust = customers.find(c => c.id === quote.customerId);
+  const [custName, setCustName] = useState(_initCust?.name || '');
+  const [contact, setContact] = useState(_initCust?.contact || '');
+  const [phone, setPhone] = useState(_initCust?.phone || '');
+  const [address, setAddress] = useState(_initCust?.address || '');
+  const [date, setDate] = useState(quote.date);
+  const [validUntil, setValidUntil] = useState(quote.validUntil || addDays(quote.date, 10));
+  const [status, setStatus] = useState(quote.status || '待回覆');
+  const [items, setItems] = useState(quote.items || []);
+  const [shipping, setShipping] = useState(quote.shipping || 0);
+  const [note, setNote] = useState(quote.note || '');
+  const [taxType, setTaxType] = useState(quote.taxType || '未稅');
+  const [totalManual, setTotalManual] = useState(quote.totalManual != null ? !!quote.totalManual : quote.total != null);
+  const [totalInput, setTotalInput] = useState(quote.total != null ? quote.total : 0);
+  const cust = customers.find(c => c.name === custName.trim());
+  const defProd = products[0]?.name || 'ㄇ 6*6*6';
+  const isPerCm = name => {
+    const p = products.find(x => x.name === name);
+    if (p?.perCm === false) return false;
+    if (p?.priceCat && STD[p.priceCat] !== undefined) return true;
+    if (PCAT[name]) return true;
+    return p ? p.perCm !== false : false;
+  };
+  const isLType = name => !!(name && name.includes('L型'));
+  const buildLNote = (dir, a, b) => `L ${dir} ${a || 0}*${b || 0}`;
+  const renderLDiagram = (dir, a, b) => {
+    const W = 150, H = 110, T = 24;
+    const D = {
+      '左下': {pts: `0,0 ${T},0 ${T},${H-T} ${W},${H-T} ${W},${H} 0,${H}`, bx: T/2, by: (H-T)/2, br: -90, ax: (T+W)/2, ay: (H-T+H)/2},
+      '左上': {pts: `0,0 ${W},0 ${W},${T} ${T},${T} ${T},${H} 0,${H}`,       bx: T/2, by: (T+H)/2, br: -90, ax: (T+W)/2, ay: T/2},
+      '右下': {pts: `0,${H-T} 0,${H} ${W},${H} ${W},0 ${W-T},0 ${W-T},${H-T}`, bx: W-T/2, by: (H-T)/2, br: -90, ax: (W-T)/2, ay: (H-T+H)/2},
+      '右上': {pts: `0,0 ${W},0 ${W},${H} ${W-T},${H} ${W-T},${T} 0,${T}`,   bx: W-T/2, by: (T+H)/2, br: -90, ax: (W-T)/2, ay: T/2}
+    };
+    const s = D[dir] || D['左下'];
+    return h("svg", {width: W, height: H, style: {display: 'block', margin: '6px 0 2px 0', flexShrink: 0}},
+      h("polygon", {points: s.pts, fill: '#c8dff8', stroke: '#1a4d8f', strokeWidth: 2}),
+      h("text", {x: s.bx, y: s.by + 4, textAnchor: 'middle', transform: `rotate(${s.br},${s.bx},${s.by})`, fill: '#1a4d8f', fontSize: 10, fontWeight: 'bold'}, 'B=' + (b || 0) + 'cm'),
+      h("text", {x: s.ax, y: s.ay + 4, textAnchor: 'middle', fill: '#c0392b', fontSize: 10, fontWeight: 'bold'}, 'A=' + (a || 0) + 'cm')
+    );
+  };
+  const getPrice = (custName, productName, color) => {
+    const p = products.find(x => x.name === productName);
+    const cat = p?.priceCat || PCAT[productName];
+    if (cat) return ((prices[custName] || STD)[cat] || 0) + (colorSurcharge[color] || 0);
+    return p?.defaultPrice || 0;
+  };
+  const calcAmt = item => {
+    if (isPerCm(item.product)) return Math.round(item.size * item.qty * item.unitPrice);
+    return Math.round((item.qty || 0) * (item.unitPrice || 0));
+  };
+  const updItem = (idx, field, val) => {
+    setItems(prev => {
+      const arr = [...prev];
+      const updated = {
+        ...arr[idx],
+        [field]: ['size', 'qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
+      };
+      if (field === 'product') {
+        if (isPerCm(val)) {
+          updated.size = updated.size || 160;
+          updated.color = updated.color || (colors || COLORS)[0] || '白';
+        } else {
+          updated.size = 0;
+          updated.qty = updated.qty || 1;
+        }
+        updated.unitPrice = getPrice(custName, val, updated.color);
+        if (isLType(val)) {
+          if (!updated.lDir) updated.lDir = '左下';
+          if (!updated.lSideA) updated.lSideA = 0;
+          if (!updated.lSideB) updated.lSideB = 0;
+          updated.note = buildLNote(updated.lDir, updated.lSideA, updated.lSideB);
+        }
+      } else if (field === 'color') {
+        updated.unitPrice = getPrice(custName, updated.product, val);
+      } else if (field === 'lDir' || field === 'lSideA' || field === 'lSideB') {
+        updated.note = buildLNote(updated.lDir, updated.lSideA, updated.lSideB);
+      }
+      if (field !== 'amount') updated.amount = calcAmt(updated);
+      arr[idx] = updated;
+      return arr;
+    });
+  };
+  const addItem = () => {
+    const color = (colors || COLORS)[0] || '白';
+    const up = getPrice(custName, defProd, color);
+    const newItem = {
+      id: uid(), product: defProd, color, size: isPerCm(defProd) ? 160 : 0, qty: 1, unitPrice: up
+    };
+    setItems(prev => [...prev, { ...newItem, amount: calcAmt(newItem) }]);
+  };
+  const delItem = idx => setItems(prev => prev.filter((_, i) => i !== idx));
+  const moveItem = (idx, dir) => setItems(prev => {
+    const a = [...prev];
+    const b = idx + dir;
+    if (b < 0 || b >= a.length) return a;
+    [a[idx], a[b]] = [a[b], a[idx]];
+    return a;
+  });
+  const handleCustName = v => {
+    setCustName(v);
+    const found = customers.find(c => c.name === v.trim());
+    if (found) {
+      setContact(found.contact || '');
+      setPhone(found.phone || '');
+      setAddress(found.address || '');
+    }
+    setItems(prev => prev.map(item => {
+      const up = getPrice(v, item.product, item.color);
+      const updated = { ...item, unitPrice: up };
+      return { ...updated, amount: calcAmt(updated) };
+    }));
+  };
+  const subtotal = items.reduce((s, i) => s + i.amount, 0);
+  const preTax = subtotal + Number(shipping || 0);
+  const tax = taxType === '未稅' ? Math.round(preTax * 0.05) : taxType === '含稅' ? preTax - Math.round(preTax / 1.05) : 0;
+  const autoTotal = taxType === '未稅' ? preTax + tax : preTax;
+  const total = totalManual ? (Number(totalInput) || 0) : autoTotal;
+  const handleSave = () => {
+    const name = custName.trim();
+    if (!name || !date) return alert('請輸入客戶名稱和日期');
+    if (items.length === 0) return alert('請新增至少一個商品');
+    let finalCid = cust?.id;
+    if (!finalCid) {
+      const newCust = { id: 'c' + Date.now(), name, contact: contact.trim(), phone: phone.trim(), address: address.trim() };
+      const uc = [...customers, newCust];
+      setCustomers(uc);
+      DB.save('yl-customers-v4', uc);
+      if (!prices[name]) {
+        const up = { ...prices, [name]: { ...STD } };
+        setPrices(up);
+        DB.save('yl-prices-v2', up);
+      }
+      finalCid = newCust.id;
+    } else if ((cust.contact || '') !== contact.trim() || (cust.phone || '') !== phone.trim() || (cust.address || '') !== address.trim()) {
+      const uc = customers.map(c => c.id === finalCid ? { ...c, contact: contact.trim(), phone: phone.trim(), address: address.trim() } : c);
+      setCustomers(uc);
+      DB.save('yl-customers-v4', uc);
+    }
+    const updated = {
+      ...quote,
+      customerId: finalCid,
+      date,
+      validUntil,
+      status,
+      quoteNumber: getQN(date),
+      items: items.map((it, i) => ({ ...it, no: i + 1 })),
+      extras: [],
+      shipping: Number(shipping) || 0,
+      subtotal,
+      taxType,
+      tax,
+      totalManual,
+      total,
+      note
+    };
+    onUpdate(updated);
+    onClose();
+  };
+  const itemRow = (item, idx) => {
+    return h("tr", { key: item.id },
+      h("td", { style: { color: '#999' } }, idx + 1),
+      h("td", null, h("input", { list: "edit-quote-prod-list", value: item.product, onChange: e => updItem(idx, 'product', e.target.value), placeholder: "輸入或選擇產品", style: { width: '100%', minWidth: 110 } })),
+      h("td", null, h("select", { value: item.color, onChange: e => updItem(idx, 'color', e.target.value) }, h("option", { key: "無" }, "無"), (colors || COLORS).map(c => h("option", { key: c }, c)))),
+      h("td", null, h("input", { type: "number", value: item.size, min: "0", onChange: e => updItem(idx, 'size', e.target.value) })),
+      h("td", null, h("input", { type: "number", value: item.qty, min: "1", onChange: e => updItem(idx, 'qty', e.target.value) })),
+      h("td", null, h("input", { type: "number", step: "0.1", value: item.unitPrice, onChange: e => updItem(idx, 'unitPrice', e.target.value) })),
+      h("td", null, h("input", { type: "number", value: item.amount, onChange: e => updItem(idx, 'amount', e.target.value) })),
+      h("td", null, h("input", { value: item.note || '', onChange: e => updItem(idx, 'note', e.target.value), placeholder: "備註", style: { width: 80 } })),
+      h("td", { style: { whiteSpace: 'nowrap' } },
+        h("button", { className: "btn btn-sm", style: { padding: '2px 4px', marginRight: 2, fontSize: 12 }, onClick: () => moveItem(idx, -1), disabled: idx === 0 }, "↑"),
+        h("button", { className: "btn btn-sm", style: { padding: '2px 4px', marginRight: 2, fontSize: 12 }, onClick: () => moveItem(idx, 1), disabled: idx === items.length - 1 }, "↓"),
+        h("button", { className: "btn btn-danger btn-sm", onClick: () => delItem(idx) }, "✕")
+      )
+    );
+  };
+  return h("div", { className: "modal-bg" },
+    h("datalist", { id: "edit-quote-prod-list" }, products.map(p => h("option", { key: p.id, value: p.name }))),
+    h("datalist", { id: "edit-quote-cust-list" }, customers.map(c => h("option", { key: c.id, value: c.name }))),
+    h("div", { className: "modal" },
+      h("div", { className: "modal-title" },
+        h("span", null, "✏️ 編輯報價單"),
+        h("button", { className: "btn btn-sm", onClick: onClose }, "✕ 關閉")
+      ),
+      h("div", { className: "form-grid g3", style: { marginBottom: 12 } },
+        h("div", null, h("label", null, "選擇現有客戶"), h("select", { value: cust ? cust.id : '', onChange: e => { const c = customers.find(x => x.id === e.target.value); if (c) handleCustName(c.name); } }, h("option", { value: "" }, "— 從清單挑選 —"), customers.map(c => h("option", { key: c.id, value: c.id }, c.name)))),
+        h("div", null, h("label", null, "客戶名稱"), h("input", { list: "edit-quote-cust-list", value: custName, onChange: e => handleCustName(e.target.value), placeholder: "輸入或選擇客戶（新名稱會自動加入客戶名單）" })),
+        h("div", null, h("label", null, "報價日期"), h("input", { type: "date", value: date, onChange: e => setDate(e.target.value) })),
+        h("div", null, h("label", null, "有效期限"), h("input", { type: "date", value: validUntil, onChange: e => setValidUntil(e.target.value) })),
+        h("div", null, h("label", null, "報價單號（自動產生）"), h("input", { readOnly: true, value: date ? getQN(date) : '', style: { background: '#f8fafd', color: '#1a2744', fontWeight: 500 } })),
+        h("div", null, h("label", null, "狀態"), h("select", { value: status, onChange: e => setStatus(e.target.value) }, ["待回覆", "已成交", "未成交"].map(s => h("option", { key: s }, s))))
+      ),
+      h("div", { className: "form-grid g3", style: { marginBottom: 6 } },
+        h("div", null, h("label", null, "聯絡人"), h("input", { value: contact, onChange: e => setContact(e.target.value), placeholder: "聯絡人" })),
+        h("div", null, h("label", null, "聯絡電話"), h("input", { value: phone, onChange: e => setPhone(e.target.value), placeholder: "聯絡電話" })),
+        h("div", null, h("label", null, "送貨地址"), h("input", { value: address, onChange: e => setAddress(e.target.value), placeholder: "送貨地址" }))
+      ),
+      h("div", { style: { fontSize: 11, color: cust ? '#3a8a5a' : '#c0392b', marginBottom: 10 } }, cust ? "✔ 已帶入現有客戶資料，可修改；儲存時會同步更新客戶名單" : "✦ 尚未建檔的新客戶，儲存報價單時會自動加入客戶名單"),
+      h("div", { className: "section-hdr" }, "商品項目"),
+      h("div", { style: { overflowX: 'auto' } },
+        h("table", { className: "items-table" },
+          h("thead", null, h("tr", null,
+            h("th", { style: { width: 30 } }, "No."),
+            h("th", { style: { minWidth: 120 } }, "產品"),
+            h("th", { style: { width: 55 } }, "顏色"),
+            h("th", { style: { width: 70 } }, "尺寸(CM)"),
+            h("th", { style: { width: 50 } }, "數量"),
+            h("th", { style: { width: 65 } }, "單價/cm"),
+            h("th", { style: { width: 75 } }, "金額(NT$)"),
+            h("th", { style: { width: 90 } }, "備註"),
+            h("th", { style: { width: 80 } })
+          )),
+          h("tbody", null, items.map(itemRow))
+        )
+      ),
+      h("div", { style: { display: 'flex', gap: 10, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' } },
+        h("button", { className: "btn btn-sm", onClick: addItem }, "＋ 新增品項"),
+        h("div", { style: { marginLeft: 'auto', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' } },
+          h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
+            h("span", { style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' } }, "運費"),
+            h("input", { type: "number", value: shipping, onChange: e => setShipping(e.target.value), style: { width: 70 } })
+          ),
+          h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
+            h("span", { style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' } }, "稅別"),
+            h("select", { value: taxType, onChange: e => setTaxType(e.target.value), style: { width: 150 } },
+              h("option", { value: "未稅" }, "未稅（外加 5% 稅）"),
+              h("option", { value: "含稅" }, "含稅價"),
+              h("option", { value: "無" }, "無（不計稅）"))
+          ),
+          h("div", { style: { fontSize: 12, color: '#666', whiteSpace: 'nowrap' } }, "小計 ", h("span", { style: { color: '#c9a84c', fontWeight: 600 } }, fmtN(subtotal)), taxType === '未稅' ? '　營業稅 ' + fmtN(tax) : taxType === '含稅' ? '　內含稅 ' + fmtN(tax) : ''),
+          h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
+            h("span", { style: { fontSize: 13, fontWeight: 600, color: '#c0392b', whiteSpace: 'nowrap' } }, "總金額"),
+            h("input", { type: "number", value: totalManual ? totalInput : autoTotal, onChange: e => { setTotalManual(true); setTotalInput(e.target.value); }, style: { width: 100, fontSize: 15, fontWeight: 600, color: '#c0392b' } }),
+            totalManual && h("button", { className: "btn btn-sm", style: { padding: '2px 6px' }, title: "改回自動計算", onClick: () => { setTotalManual(false); setTotalInput(autoTotal); } }, "↻")
+          )
+        )
+      ),
+      h("div", { style: { marginBottom: 14 } }, h("label", null, "備註（會印在報價單上，可自行增減）"), h("textarea", { value: note, onChange: e => setNote(e.target.value), rows: 5, placeholder: "選填備註", style: { width: '100%', resize: 'vertical', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.6 } })),
+      items.some(it => isLType(it.product)) && h("div", { style: { background: '#eef6ff', border: '1px solid #b8d4f8', borderRadius: 8, padding: '10px 14px', marginBottom: 12 } },
+        h("div", { style: { fontWeight: 600, color: '#1a4d8f', marginBottom: 8, fontSize: 13 } }, "🔧 L型設定"),
+        h("div", { style: { fontFamily: 'monospace', fontSize: 12, background: '#fff', border: '1px solid #d0e4f8', borderRadius: 4, padding: '6px 10px', marginBottom: 10, color: '#444', lineHeight: 1.7 } },
+          "A邊＝橫向長度（水平）　B邊＝縱向長度（垂直）", h("br", null), "┌ 左上：A→右  B↓下　　┐ 右上：A←左  B↓下", h("br", null), "└ 左下：A→右  B↑上　　┘ 右下：A←左  B↑上"
+        ),
+        items.filter(it => isLType(it.product)).map(it => h("div", { key: it.id, style: { marginBottom: 10 } },
+          h("div", { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4, fontSize: 13 } },
+            h("span", { style: { color: '#1a4d8f', fontWeight: 600, minWidth: 70 } }, "項目 #", items.indexOf(it) + 1, "："),
+            h("span", null, "開口方向"),
+            h("select", { value: it.lDir || '左下', onChange: e => updItem(items.indexOf(it), 'lDir', e.target.value), style: { width: 90, padding: '2px 4px' } },
+              h("option", { value: "左上" }, "┌ 左上"), h("option", { value: "右上" }, "┐ 右上"), h("option", { value: "左下" }, "└ 左下"), h("option", { value: "右下" }, "┘ 右下")
+            ),
+            h("span", null, "A邊(cm)"),
+            h("input", { type: "number", value: it.lSideA || 0, min: "0", onChange: e => updItem(items.indexOf(it), 'lSideA', e.target.value), style: { width: 65 } }),
+            h("span", null, "B邊(cm)"),
+            h("input", { type: "number", value: it.lSideB || 0, min: "0", onChange: e => updItem(items.indexOf(it), 'lSideB', e.target.value), style: { width: 65 } }),
+            h("span", { style: { color: '#888', fontSize: 11, fontStyle: 'italic' } }, "→ ", it.note)
+          ),
+          renderLDiagram(it.lDir || '左下', it.lSideA, it.lSideB)
+        ))
+      ),
+      h("div", { style: { display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid #eef1f6', paddingTop: 12 } },
+        h("button", { className: "btn", onClick: onClose }, "取消"),
+        h("button", { className: "btn btn-primary", onClick: handleSave }, "💾 儲存變更")
+      )
+    )
+  );
+}
+
+/* ===== QUOTATION VIEW ===== */
+function QuoteView({
+  quotes,
+  setQuotes,
+  customers,
+  setCustomers,
+  prices,
+  setPrices,
+  products,
+  colors,
+  colorSurcharge = {}
+}) {
+  const [showNew, setShowNew] = useState(false);
+  const [editQuote, setEditQuote] = useState(null);
+  const [filterCust, setFilterCust] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterYear, setFilterYear] = useState(toROCM(today()).split('-')[0]);
+  const [filterMonth, setFilterMonth] = useState(toROCM(today()).split('-')[1]);
+  const saveQuote = q => {
+    const u = [q, ...quotes];
+    setQuotes(u);
+    DB.save('yl-quotes', u);
+    setShowNew(false);
+  };
+  const updateQuote = q => {
+    const u = quotes.map(x => x.id === q.id ? q : x);
+    setQuotes(u);
+    DB.save('yl-quotes', u);
+    setEditQuote(null);
+  };
+  const delQuote = id => {
+    if (!confirm('確定刪除此報價單？')) return;
+    const u = quotes.filter(q => q.id !== id);
+    setQuotes(u);
+    DB.save('yl-quotes', u);
+  };
+  const setQStatus = (q, status) => {
+    const u = quotes.map(x => x.id === q.id ? { ...x, status } : x);
+    setQuotes(u);
+    DB.save('yl-quotes', u);
+  };
+  const custName = q => customers.find(c => c.id === q.customerId)?.name || '?';
+  const qMonths = [...new Set(quotes.map(q => toROCM(q.date)))].filter(Boolean).sort().reverse();
+  const qYears = [...new Set(qMonths.map(m => m.split('-')[0]))].sort().reverse();
+  const filtMonths = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+  const filt = quotes.filter(q => (filterYear && filterMonth ? toROCM(q.date) === filterYear + '-' + filterMonth : filterYear ? toROCM(q.date).startsWith(filterYear + '-') : true) && (!filterCust || q.customerId === filterCust) && (!filterStatus || q.status === filterStatus)).sort((a, b) => b.date.localeCompare(a.date));
+  const totalAmt = quotes.reduce((s, q) => s + (q.total || 0), 0);
+  const wonAmt = quotes.filter(q => q.status === '已成交').reduce((s, q) => s + (q.total || 0), 0);
+  const pendingAmt = quotes.filter(q => q.status === '待回覆' || !q.status).reduce((s, q) => s + (q.total || 0), 0);
+  const statusColor = s => s === '已成交' ? '#27ae60' : s === '未成交' ? '#c0392b' : '#e08e0b';
+  return h("div", null,
+    h("div", { className: "stat-grid" },
+      h("div", { className: "stat-card" }, h("div", { className: "stat-val" }, quotes.length), h("div", { className: "stat-lbl" }, "報價總數")),
+      h("div", { className: "stat-card" }, h("div", { className: "stat-val", style: { color: '#1a2744', fontSize: 17 } }, "NT$ ", fmtN(totalAmt)), h("div", { className: "stat-lbl" }, "報價總金額")),
+      h("div", { className: "stat-card" }, h("div", { className: "stat-val", style: { color: '#27ae60', fontSize: 17 } }, "NT$ ", fmtN(wonAmt)), h("div", { className: "stat-lbl" }, "已成交金額")),
+      h("div", { className: "stat-card" }, h("div", { className: "stat-val", style: { color: '#e08e0b', fontSize: 17 } }, "NT$ ", fmtN(pendingAmt)), h("div", { className: "stat-lbl" }, "待回覆金額"))
+    ),
+    h("div", { className: "card" },
+      h("div", { style: { display: 'flex', gap: 10, marginBottom: 12, alignItems: 'flex-end', flexWrap: 'wrap' } },
+        h("div", null, h("label", null, "篩選年份"), h("select", { value: filterYear, onChange: e => setFilterYear(e.target.value), style: { width: 75 } }, h("option", { value: "" }, "全部"), qYears.map(y => h("option", { key: y, value: y }, y)))),
+        h("div", null, h("label", null, "篩選月份"), h("select", { value: filterMonth, onChange: e => setFilterMonth(e.target.value), style: { width: 105 } }, h("option", { value: "" }, "全部月份"), filtMonths.map(m => h("option", { key: m, value: m }, m)))),
+        h("div", null, h("label", null, "篩選客戶"), h("select", { value: filterCust, onChange: e => setFilterCust(e.target.value), style: { width: 140 } }, h("option", { value: "" }, "全部客戶"), customers.map(c => h("option", { key: c.id, value: c.id }, c.name)))),
+        h("div", null, h("label", null, "篩選狀態"), h("select", { value: filterStatus, onChange: e => setFilterStatus(e.target.value), style: { width: 100 } }, h("option", { value: "" }, "全部"), ["待回覆", "已成交", "未成交"].map(s => h("option", { key: s }, s)))),
+        h("button", { className: "btn btn-primary", style: { alignSelf: 'flex-end' }, onClick: () => setShowNew(true) }, "＋ 新增報價單"),
+        h("div", { style: { marginLeft: 'auto', alignSelf: 'flex-end', fontSize: 12, color: '#999' } }, "共 ", filt.length, " 筆　合計 NT$ ", fmtN(filt.reduce((s, q) => s + (q.total || 0), 0)))
+      ),
+      filt.length > 0 ? h("div", { style: { overflowX: 'auto' } },
+        h("table", { className: "data" },
+          h("thead", null, h("tr", null, ["客戶", "報價日期", "有效期限", "報價單號", "狀態", "項目數", "合計（NT$）", "備註", "操作"].map(t => h("th", { key: t }, t)))),
+          h("tbody", null, filt.map(q => {
+            const expired = q.validUntil && q.validUntil < today();
+            return h(React.Fragment, { key: q.id },
+              h("tr", null,
+                h("td", null, custName(q)),
+                h("td", null, toROC(q.date)),
+                h("td", { style: { color: expired ? '#c0392b' : 'inherit', fontWeight: expired ? 600 : 'normal' } }, q.validUntil ? toROC(q.validUntil) + (expired ? '（已過期）' : '') : '—'),
+                h("td", null, q.quoteNumber || '—'),
+                h("td", null, h("select", { value: q.status || '待回覆', onChange: e => setQStatus(q, e.target.value), style: { background: statusColor(q.status), color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', fontSize: 12 } }, ["待回覆", "已成交", "未成交"].map(s => h("option", { key: s, value: s }, s)))),
+                h("td", { style: { textAlign: 'center' } }, q.items?.length || 0),
+                h("td", { style: { textAlign: 'right', fontWeight: 600 } }, fmtN(q.total || 0)),
+                h("td", { style: { color: '#888', fontSize: 12 } }, q.note || '—'),
+                h("td", null,
+                  h("button", { className: "btn btn-sm", style: { marginRight: 4 }, onClick: () => setEditQuote(q) }, "編輯"),
+                  h("button", { className: "btn btn-sm", style: { marginRight: 4 }, onClick: () => printQuoteDoc(q, customers.find(c => c.id === q.customerId) || {}) }, "🖨 列印"),
+                  h("button", { className: "btn btn-danger btn-sm", onClick: () => delQuote(q.id) }, "刪除")
+                )
+              ),
+              q.items?.length > 0 && h("tr", { style: { background: '#f8f9fa' } },
+                h("td", { colSpan: 9, style: { padding: '4px 16px 8px' } },
+                  h("table", { style: { width: '100%', fontSize: 12, borderCollapse: 'collapse' } },
+                    h("thead", null, h("tr", { style: { color: '#888' } }, ["產品規格", "顏色", "尺寸(CM)", "數量", "單價", "金額"].map(t => h("th", { key: t, style: { textAlign: t === '產品規格' ? 'left' : 'right', paddingRight: 16 } }, t)))),
+                    h("tbody", null, q.items.map((it, i) => h("tr", { key: it.id || i },
+                      h("td", { style: { paddingRight: 16 } }, it.product || '—'),
+                      h("td", { style: { textAlign: 'right', paddingRight: 16 } }, it.color || '—'),
+                      h("td", { style: { textAlign: 'right', paddingRight: 16 } }, it.size || '—'),
+                      h("td", { style: { textAlign: 'right', paddingRight: 16 } }, it.qty),
+                      h("td", { style: { textAlign: 'right', paddingRight: 16 } }, it.unitPrice),
+                      h("td", { style: { textAlign: 'right' } }, fmtN(it.amount))
+                    )))
+                  )
+                )
+              )
+            );
+          }))
+        )
+      ) : h("div", { className: "empty" },
+        h("div", { style: { fontSize: 40, marginBottom: 10 } }, "📝"),
+        h("div", { style: { fontSize: 15, marginBottom: 6 } }, "尚無報價單記錄"),
+        h("button", { className: "btn btn-primary", style: { marginTop: 8 }, onClick: () => setShowNew(true) }, "＋ 新增第一筆報價單")
+      ),
+      showNew && h(NewQuoteModal, { customers, setCustomers, prices, setPrices, products, colors, colorSurcharge, onSave: saveQuote, onClose: () => setShowNew(false) }),
+      editQuote && h(EditQuoteModal, { quote: editQuote, customers, setCustomers, prices, setPrices, products, colors, colorSurcharge, onUpdate: updateQuote, onClose: () => setEditQuote(null) })
+    )
+  );
 }
 
 /* ===== MULTI-MONTH STATEMENT PRINT (supports multiple customers in one print job) ===== */
@@ -8293,6 +9165,7 @@ function App() {
   const [receivables, setReceivables] = useState({});
   const [manualRec, setManualRec] = useState([]);
   const [purchases, setPurchases] = useState([]);
+  const [quotes, setQuotes] = useState([]);
   const [loggedIn, setLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginPw, setLoginPw] = useState('');
@@ -8320,8 +9193,8 @@ function App() {
       setLoginPw('');
     }
   };
-  const PROTECTED_TABS = ['purchase', 'statement', 'monthly', 'receivables', 'settings'];
-  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['monthly', '📈 月銷售報表'], ['settings', '⚙️ 設定']];
+  const PROTECTED_TABS = ['purchase', 'statement', 'monthly', 'receivables', 'settings', 'quotes'];
+  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['quotes', '📝 報價單'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['monthly', '📈 月銷售報表'], ['settings', '⚙️ 設定']];
   const visibleTabs = loggedIn ? ALL_TABS : [['orders', '📋 銷貨單管理']];
   useEffect(() => {
     const DEFS = {
@@ -8335,7 +9208,8 @@ function App() {
       'yl-receivables': {},
       'yl-manual-rec': [],
       'yl-purchases': INIT_PURCHASES,
-      'yl-suppliers': []
+      'yl-suppliers': [],
+      'yl-quotes': []
     };
     const apply = d => {
       setOrders(d['yl-orders-v4']);
@@ -8349,6 +9223,7 @@ function App() {
       setManualRec(d['yl-manual-rec']);
       setPurchases(d['yl-purchases']);
       setSuppliers(d['yl-suppliers']);
+      setQuotes(d['yl-quotes']);
       setLoaded(true);
     };
     // 先用本機快取立刻上畫面，不等網路；伺服器資料回來後再覆蓋
@@ -8482,14 +9357,27 @@ function App() {
     }
   }), "⚡ 勇龍有限公司 銷貨管理系統"), /*#__PURE__*/React.createElement("div", {
     className: "navbar-sub"
-  }, "YEONG LONG Ltd — Sales Management System")), loggedIn ? /*#__PURE__*/React.createElement("button", {
+  }, "YEONG LONG Ltd — Sales Management System")), loggedIn ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    style: {
+      color: '#f5d98a',
+      borderColor: 'rgba(245,217,138,0.4)'
+    },
+    onClick: DB.exportAll
+  }, "⬇ 備份"), /*#__PURE__*/React.createElement("button", {
     className: "btn",
     style: {
       color: '#f5d98a',
       borderColor: 'rgba(245,217,138,0.4)'
     },
     onClick: logout
-  }, "🔓 登出") : /*#__PURE__*/React.createElement("div", {
+  }, "🔓 登出")) : /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 6,
@@ -8661,7 +9549,17 @@ function App() {
       marginTop: 8
     },
     onClick: () => setShowNew(true)
-  }, "＋ 新增第一筆銷貨單")))), tab === 'purchase' && /*#__PURE__*/React.createElement(PurchaseView, {
+  }, "＋ 新增第一筆銷貨單")))), tab === 'quotes' && /*#__PURE__*/React.createElement(QuoteView, {
+    quotes: quotes,
+    setQuotes: setQuotes,
+    customers: customers,
+    setCustomers: setCustomers,
+    prices: prices,
+    setPrices: setPrices,
+    products: products,
+    colors: colors,
+    colorSurcharge: colorSurcharge
+  }), tab === 'purchase' && /*#__PURE__*/React.createElement(PurchaseView, {
     purchases: purchases,
     setPurchases: setPurchases,
     supplierList: suppliers
