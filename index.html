@@ -4162,7 +4162,7 @@ function genQuotePrintHTML(quote, cust) {
   const lDiagH = lItems.length ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:18px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:10pt;font-weight:bold;margin-bottom:2px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:10pt;color:#555;margin-bottom:3px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB, 2.2) + '</div>').join('') + '</div>' : '';
   const noteTxt = (quote.note || '').replace(/\n/g, '<br>');
   const noteBody = `<strong>備註：</strong>${noteTxt ? '<br>' + noteTxt : ''}`;
-  const noteStamp = `<img src="${COMPANY_STAMP}" alt="勇龍有限公司" style="float:right;height:2.76cm;margin:-2px 0 2px 14px;opacity:.88;transform:rotate(-3deg);-webkit-print-color-adjust:exact;print-color-adjust:exact">`;
+  const noteStamp = `<img src="${COMPANY_STAMP}" alt="勇龍有限公司" style="float:right;height:2.05cm;margin:0 0 0 14px;opacity:.9;transform:rotate(-3deg);-webkit-print-color-adjust:exact;print-color-adjust:exact">`;
   const noteH = (quote.note || lDiagH) ? `<tr><td colspan="${cols}" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000;line-height:1.5">${noteStamp}${noteBody}${lDiagH}</td></tr>` : '';
   const noteBigH = (quote.note || lDiagH) ? `<div style="padding:8px 10px"><div style="font-size:12pt;line-height:1.6">${noteStamp}${noteBody}</div>${lDiagH}</div>` : '';
   const measRows = rowsData.map(tds => `<tr class="dr">${tds}</tr>`).join('');
