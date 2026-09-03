@@ -6823,6 +6823,13 @@ function genMultiStmtHTML(entries) {
           html: `<tr class="dr"><td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product || ''} ${item.color || ''}</td><td>${item.size || ''}</td><td>${item.qty || ''}</td><td>${item.unitPrice || ''}</td><td style="text-align:right">${fmtN(item.amount)}</td></tr>`
         });
       });
+      if (md.notes && md.notes.length) {
+        const noteStr = md.notes.map(n => `<span style="white-space:nowrap">${n.date.slice(5).replace('-', '/')}${n.num ? ' ' + n.num : ''}</span>：${n.note}`).join('　｜　');
+        flatRows.push({
+          type: 'note',
+          html: `<tr><td colspan="7" style="text-align:left;padding:2px 6px;font-size:9.5pt;line-height:1.4;border:1px solid #000">📝 銷貨單備註　${noteStr}</td></tr>`
+        });
+      }
       flatRows.push({
         type: 'sub',
         html: `<tr class="tr"><td colspan="6" style="text-align:right;font-weight:700">本月合計</td><td style="font-weight:700;font-size:11pt;text-align:right">${fmtN(md.total)}</td></tr>`
@@ -6901,7 +6908,7 @@ window.onload=function(){
     for(let i=0;i<rh.length;i++){
       let canBreak=true;
       if(cd.t[i]==='data'&&i>0&&cd.t[i-1]==='hdr')canBreak=false;
-      if(cd.t[i]==='sub')canBreak=false;
+      if(cd.t[i]==='sub'||cd.t[i]==='note')canBreak=false;
       if(usedH+rh[i]<=PH-4-ovh){cur.push(i);usedH+=rh[i];}
       else{
         if(cur.length&&canBreak){pages.push(cur.slice());cur=[i];usedH=rh[i];}
@@ -6917,7 +6924,7 @@ window.onload=function(){
       if(mv<0)break;
       let moved=lp.splice(mv,1)[0];lh-=rh[moved];
       let np=[moved];
-      if(mv<lp.length&&cd.t[lp[mv]]==='sub'){let subMv=lp.splice(mv,1)[0];lh-=rh[subMv];np.push(subMv);}
+      while(mv<lp.length&&(cd.t[lp[mv]]==='sub'||cd.t[lp[mv]]==='note')){let subMv=lp.splice(mv,1)[0];lh-=rh[subMv];np.push(subMv);}
       pages.push(np);lp=np;lh=np.reduce(function(s,i){return s+rh[i];},0);
       if(np.length>1)break;
     }
@@ -6951,7 +6958,7 @@ window.onload=function(){
           if(mv2<0)continue;
           let mv3=pages[p].splice(mv2,1)[0];
           let toMv=[mv3];
-          if(mv2<pages[p].length&&cd.t[pages[p][mv2]]==='sub'){let subMv2=pages[p].splice(mv2,1)[0];toMv.push(subMv2);}
+          while(mv2<pages[p].length&&(cd.t[pages[p][mv2]]==='sub'||cd.t[pages[p][mv2]]==='note')){let subMv2=pages[p].splice(mv2,1)[0];toMv.push(subMv2);}
           if(p+1>=pages.length)pages.push(toMv);
           else{for(let ti=toMv.length-1;ti>=0;ti--)pages[p+1].unshift(toMv[ti]);}
           changed=true;
@@ -6991,6 +6998,7 @@ function StatementView({
   const getMonthDataForCust = (customerId, m) => {
     const mos = orders.filter(o => o.customerId === customerId && toROCM(o.date) === m);
     const items = [];
+    const notes = [];
     mos.forEach(o => {
       (o.items || []).forEach(item => items.push({
         ...item,
@@ -7007,10 +7015,16 @@ function StatementView({
         unitPrice: '',
         amount: o.shipping
       });
+      if (o.note && o.note.trim()) notes.push({
+        date: o.date,
+        num: o.orderNumber || '',
+        note: o.note.trim().replace(/\s*\n\s*/g, '／')
+      });
     });
     return {
       month: m,
       items,
+      notes,
       total: items.reduce((s, i) => s + (i.amount || 0), 0)
     };
   };
