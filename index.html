@@ -3955,26 +3955,30 @@ function genPrintHTML(order, cust, showPrices) {
   const title = showPrices ? '請款單' : '銷貨單';
   const items = order.items || [];
   const total = order.total || 0;
-  const cols = showPrices ? 8 : 7;
+  const hasTax = order.taxType === '未稅' || order.taxType === '含稅';
+  const oTax = !hasTax ? 0 : (order.tax != null ? order.tax : total - Math.round(total / 1.05));
+  const oNet = total - oTax;
+  const oTaxLbl = order.taxType === '含稅' ? '內含營業稅 5%' : order.taxType === '未稅' ? '營業稅 5%' : '稅額';
+  const cols = showPrices ? 9 : 8;
 
   // 建立每列資料的 TD 內容陣列
   const rowsData = [];
   if (showPrices) {
     items.forEach((item, i) => {
       const d = item.orderDate ? toROC(item.orderDate).replace(/-/g, '') : roc.replace(/-/g, '');
-      rowsData.push(`<td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product} ${item.color}</td><td>${item.size}</td><td>${item.qty}</td><td>${item.unitPrice}</td><td>${fmtN(item.amount)}</td><td>${item.note || ''}</td>`);
+      rowsData.push(`<td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product || ''}</td><td>${item.color || ''}</td><td>${item.size || ''}</td><td>${item.qty || ''}</td><td>${item.unitPrice || ''}</td><td>${item.amount ? fmtN(item.amount) : ''}</td><td>${item.note || ''}</td>`);
     });
-    if (order.shipping > 0) rowsData.push(`<td>${items.length + 1}</td><td></td><td style="text-align:left;padding-left:4px">運費</td><td></td><td>1</td><td></td><td>${fmtN(order.shipping)}</td><td></td>`);
+    if (order.shipping > 0) rowsData.push(`<td>${items.length + 1}</td><td></td><td style="text-align:left;padding-left:4px">運費</td><td></td><td></td><td>1</td><td></td><td>${fmtN(order.shipping)}</td><td></td>`);
   } else {
     items.forEach((item, i) => {
-      rowsData.push(`<td>${i + 1}</td><td style="text-align:left;padding-left:4px">${item.product} ${item.color}</td><td>${item.size}</td><td>${item.qty}</td><td></td><td></td><td>${item.note || ''}</td>`);
+      rowsData.push(`<td>${i + 1}</td><td style="text-align:left;padding-left:4px">${item.product || ''}</td><td>${item.color || ''}</td><td>${item.size || ''}</td><td>${item.qty || ''}</td><td></td><td></td><td>${item.note || ''}</td>`);
     });
   }
   const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
   const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div>${showPrices ? `<div class="ir"><span class="ib">對帳月份：</span><span>${rocM}</span></div>` : `<div class="ir"><span class="ib">銷貨單號：</span><span>${order.orderNumber}</span></div>`}<div class="ir"><span class="ib">日期：</span><span>${showPrices ? rocM : roc}</span></div></div></div>`;
-  const chH = `<th style="width:4%">No.</th>${showPrices ? '<th style="width:9%">訂購日期</th>' : ''}<th style="${showPrices ? 'width:29%' : 'width:38%'};text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:12%">金額</th><th style="width:14%">備註</th>`;
+  const chH = `<th style="width:4%">No.</th>${showPrices ? '<th style="width:8%">訂購日期</th>' : ''}<th style="${showPrices ? 'width:20%' : 'width:28%'}">產品</th><th style="width:9%">顏色</th><th style="width:9%">規格</th><th style="width:9%">數量</th><th style="width:10%">單價</th><th style="width:12%">金額</th><th style="width:19%">備註</th>`;
   const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　Line ID：${COMPANY.line}</div></div>`;
-  const signH = showPrices ? `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${fmtN(total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>` : `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="2" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>`;
+  const signH = showPrices ? `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="4" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${fmtN(hasTax ? oNet : total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">${oTaxLbl}</td><td colspan="2">${fmtN(oTax)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2">${fmtN(total)}</td></tr>` : `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>`;
   const lItems = items.filter(it => it.product && it.product.includes('L型') && it.lDir);
   const lDiagH = lItems.length ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:18px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:10pt;font-weight:bold;margin-bottom:2px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:10pt;color:#555;margin-bottom:3px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB, 2.2) + '</div>').join('') + '</div>' : '';
   // 表格內備註列（放得下就跟資料一起印在同一頁）
@@ -4160,7 +4164,7 @@ function genQuotePrintHTML(quote, cust) {
 
   const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
   const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div><div class="ir"><span class="ib">報價單號：</span><span>${quote.quoteNumber || ''}</span></div><div class="ir"><span class="ib">報價日期：</span><span>${roc}</span></div><div class="ir"><span class="ib">有效期限：</span><span>${quote.validUntil ? toROC(quote.validUntil) : '—'}</span></div></div></div>`;
-  const chH = `<th style="width:4%">No.</th><th style="width:8%">日期</th><th style="width:19%;text-align:left;padding-left:6px">產品</th><th style="width:9%">顏色</th><th style="width:10%">規格</th><th style="width:9%">數量</th><th style="width:11%">單價</th><th style="width:13%">金額</th><th style="width:17%">備註</th>`;
+  const chH = `<th style="width:4%">No.</th><th style="width:8%">日期</th><th style="width:19%">產品</th><th style="width:9%">顏色</th><th style="width:10%">規格</th><th style="width:9%">數量</th><th style="width:11%">單價</th><th style="width:13%">金額</th><th style="width:17%">備註</th>`;
   const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　Line ID：${COMPANY.line}</div></div>`;
   const taxLbl = quote.taxType === '含稅' ? '內含營業稅 5%' : quote.taxType === '未稅' ? '營業稅 5%' : '營業稅';
   const signH = `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="4" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${hasTax ? fmtN(qNet) : fmtN(total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">${taxLbl}</td><td colspan="2">${fmtN(qTax)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2">${fmtN(total)}</td></tr>`;
@@ -4334,6 +4338,7 @@ function NewOrderModal({
   const [date, setDate] = useState(today());
   const [items, setItems] = useState([]);
   const [shipping, setShipping] = useState(0);
+  const [taxType, setTaxType] = useState('無');
   const [note, setNote] = useState('');
   const cust = customers.find(c => c.id === cid) || customers[0];
   const defProd = products[0]?.name || 'ㄇ 6*6*6';
@@ -4468,7 +4473,9 @@ function NewOrderModal({
     }));
   };
   const subtotal = items.reduce((s, i) => s + i.amount, 0);
-  const total = subtotal + Number(shipping || 0);
+  const preTax = subtotal + Number(shipping || 0);
+  const tax = taxType === '未稅' ? Math.round(preTax * 0.05) : taxType === '含稅' ? preTax - Math.round(preTax / 1.05) : 0;
+  const total = taxType === '未稅' ? preTax + tax : preTax;
   const handleSave = () => {
     if (!cid || !date) return alert('請選擇客戶和日期');
     if (items.length === 0) return alert('請新增至少一個商品');
@@ -4483,6 +4490,8 @@ function NewOrderModal({
       })),
       extras: [],
       shipping: Number(shipping) || 0,
+      taxType,
+      tax,
       total,
       note
     };
@@ -4666,27 +4675,15 @@ function NewOrderModal({
       gap: 16,
       alignItems: 'center'
     }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: 'flex',
-      gap: 6,
-      alignItems: 'center',
-      width: 'auto'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      whiteSpace: 'nowrap',
-      color: '#666'
-    }
-  }, "運費"), /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    value: shipping,
-    onChange: e => setShipping(e.target.value),
-    style: {
-      width: 80
-    }
-  })), /*#__PURE__*/React.createElement("div", {
+  }, h("label", {
+    style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' }
+  }, h("span", {
+    style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' }
+  }, "稅別"), h("select", {
+    value: taxType,
+    onChange: e => setTaxType(e.target.value),
+    style: { width: 150 }
+  }, h("option", { value: "無" }, "無（不計稅）"), h("option", { value: "未稅" }, "未稅（外加 5% 稅）"), h("option", { value: "含稅" }, "含稅價"))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 500,
       fontSize: 13
@@ -4695,7 +4692,7 @@ function NewOrderModal({
     style: {
       color: '#c9a84c'
     }
-  }, fmtN(subtotal)), "\u3000合計：", /*#__PURE__*/React.createElement("span", {
+  }, fmtN(subtotal)), taxType === '未稅' ? "　營業稅 " + fmtN(tax) : taxType === '含稅' ? "　內含稅 " + fmtN(tax) : "", "\u3000合計：", /*#__PURE__*/React.createElement("span", {
     style: {
       color: '#c0392b',
       fontSize: 16,
@@ -4825,6 +4822,7 @@ function EditOrderModal({
   const [date, setDate] = useState(order.date);
   const [items, setItems] = useState(order.items || []);
   const [shipping, setShipping] = useState(order.shipping || 0);
+  const [taxType, setTaxType] = useState(order.taxType || '無');
   const [note, setNote] = useState(order.note || '');
   const cust = customers.find(c => c.id === cid) || customers[0];
   const defProd = products[0]?.name || 'ㄇ 6*6*6';
@@ -4920,7 +4918,9 @@ function EditOrderModal({
   });
   const handleCust = v => setCid(v);
   const subtotal = items.reduce((s, i) => s + i.amount, 0);
-  const total = subtotal + Number(shipping || 0);
+  const preTax = subtotal + Number(shipping || 0);
+  const tax = taxType === '未稅' ? Math.round(preTax * 0.05) : taxType === '含稅' ? preTax - Math.round(preTax / 1.05) : 0;
+  const total = taxType === '未稅' ? preTax + tax : preTax;
   const handleSave = () => {
     if (!cid || !date) return alert('請選擇客戶和日期');
     if (items.length === 0) return alert('請新增至少一個商品');
@@ -4935,6 +4935,8 @@ function EditOrderModal({
       })),
       extras: [],
       shipping: Number(shipping) || 0,
+      taxType,
+      tax,
       total,
       note
     };
@@ -5118,27 +5120,15 @@ function EditOrderModal({
       gap: 16,
       alignItems: 'center'
     }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: 'flex',
-      gap: 6,
-      alignItems: 'center',
-      width: 'auto'
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      whiteSpace: 'nowrap',
-      color: '#666'
-    }
-  }, "運費"), /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    value: shipping,
-    onChange: e => setShipping(e.target.value),
-    style: {
-      width: 80
-    }
-  })), /*#__PURE__*/React.createElement("div", {
+  }, h("label", {
+    style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' }
+  }, h("span", {
+    style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' }
+  }, "稅別"), h("select", {
+    value: taxType,
+    onChange: e => setTaxType(e.target.value),
+    style: { width: 150 }
+  }, h("option", { value: "無" }, "無（不計稅）"), h("option", { value: "未稅" }, "未稅（外加 5% 稅）"), h("option", { value: "含稅" }, "含稅價"))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: 500,
       fontSize: 13
@@ -5147,7 +5137,7 @@ function EditOrderModal({
     style: {
       color: '#c9a84c'
     }
-  }, fmtN(subtotal)), "\u3000合計：", /*#__PURE__*/React.createElement("span", {
+  }, fmtN(subtotal)), taxType === '未稅' ? "　營業稅 " + fmtN(tax) : taxType === '含稅' ? "　內含稅 " + fmtN(tax) : "", "\u3000合計：", /*#__PURE__*/React.createElement("span", {
     style: {
       color: '#c0392b',
       fontSize: 16,
@@ -6309,10 +6299,6 @@ function NewQuoteModal({
         h("button", { className: "btn btn-sm", onClick: addItem }, "＋ 新增品項"),
         h("div", { style: { marginLeft: 'auto', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' } },
           h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
-            h("span", { style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' } }, "運費"),
-            h("input", { type: "number", value: shipping, onChange: e => setShipping(e.target.value), style: { width: 70 } })
-          ),
-          h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
             h("span", { style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' } }, "稅別"),
             h("select", { value: taxType, onChange: e => setTaxType(e.target.value), style: { width: 150 } },
               h("option", { value: "未稅" }, "未稅（外加 5% 稅）"),
@@ -6589,10 +6575,6 @@ function EditQuoteModal({
         h("button", { className: "btn btn-sm", onClick: addItem }, "＋ 新增品項"),
         h("div", { style: { marginLeft: 'auto', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' } },
           h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
-            h("span", { style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' } }, "運費"),
-            h("input", { type: "number", value: shipping, onChange: e => setShipping(e.target.value), style: { width: 70 } })
-          ),
-          h("label", { style: { display: 'flex', gap: 6, alignItems: 'center', width: 'auto' } },
             h("span", { style: { fontSize: 12, whiteSpace: 'nowrap', color: '#666' } }, "稅別"),
             h("select", { value: taxType, onChange: e => setTaxType(e.target.value), style: { width: 150 } },
               h("option", { value: "未稅" }, "未稅（外加 5% 稅）"),
@@ -6760,7 +6742,7 @@ function genMultiStmtHTML(entries) {
     return `${y}年${mo}月`;
   };
   const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
-  const chH = `<th style="width:4%">No.</th><th style="width:9%">訂購日期</th><th style="width:29%;text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:14%">金額</th>`;
+  const chH = `<th style="width:4%">No.</th><th style="width:8%">訂購日期</th><th style="width:16%">產品</th><th style="width:9%">顏色</th><th style="width:9%">規格</th><th style="width:8%">數量</th><th style="width:9%">單價</th><th style="width:12%">金額</th><th style="width:25%;text-align:left;padding-left:6px">備註</th>`;
   const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　Line ID：${COMPANY.line}</div></div>`;
 
   const custList = entries.map(({
@@ -6774,28 +6756,28 @@ function genMultiStmtHTML(entries) {
     monthsData.forEach(md => {
       flatRows.push({
         type: 'hdr',
-        html: `<tr><td colspan="7" style="background:#1a2744;color:#f5d98a;font-weight:700;font-size:11pt;padding:2px 4px;text-align:left;border:1px solid #000">${rocMonthLabel(md.month)}</td></tr>`
+        html: `<tr><td colspan="9" style="background:#1a2744;color:#f5d98a;font-weight:700;font-size:11pt;padding:2px 4px;text-align:left;border:1px solid #000">${rocMonthLabel(md.month)}</td></tr>`
       });
       md.items.forEach((item, i) => {
         const d = item.orderDate ? toROC(item.orderDate).replace(/-/g, '') : '';
         flatRows.push({
           type: 'data',
-          html: `<tr class="dr"><td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product || ''} ${item.color || ''}</td><td>${item.size || ''}</td><td>${item.qty || ''}</td><td>${item.unitPrice || ''}</td><td style="text-align:right">${fmtN(item.amount)}</td></tr>`
+          html: `<tr class="dr"><td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product || ''}</td><td>${item.color || ''}</td><td>${item.size || ''}</td><td>${item.qty || ''}</td><td>${item.unitPrice || ''}</td><td style="text-align:right">${fmtN(item.amount)}</td><td style="text-align:left;padding-left:4px;font-size:9.5pt">${item.note || ''}</td></tr>`
         });
       });
       if (md.notes && md.notes.length) {
         const noteStr = md.notes.map(n => `<span style="white-space:nowrap">${n.date.slice(5).replace('-', '/')}${n.num ? ' ' + n.num : ''}</span>：${n.note}`).join('　｜　');
         flatRows.push({
           type: 'note',
-          html: `<tr><td colspan="7" style="text-align:left;padding:2px 6px;font-size:9.5pt;line-height:1.4;border:1px solid #000">📝 銷貨單備註　${noteStr}</td></tr>`
+          html: `<tr><td colspan="9" style="text-align:left;padding:2px 6px;font-size:9.5pt;line-height:1.4;border:1px solid #000">📝 銷貨單備註　${noteStr}</td></tr>`
         });
       }
       flatRows.push({
         type: 'sub',
-        html: `<tr class="tr"><td colspan="6" style="text-align:right;font-weight:700">本月合計</td><td style="font-weight:700;font-size:11pt;text-align:right">${fmtN(md.total)}</td></tr>`
+        html: `<tr class="tr"><td colspan="7" style="text-align:right;font-weight:700">本月合計</td><td style="font-weight:700;font-size:11pt;text-align:right">${fmtN(md.total)}</td><td></td></tr>`
       });
     });
-    const grandH = `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center;font-weight:700">總計</td><td style="font-weight:700;text-align:right">${fmtN(grandTotal)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td></td></tr><tr class="tr"><td colspan="2" style="text-align:center">實付</td><td></td></tr>`;
+    const grandH = `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="5" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center;font-weight:700">總計</td><td style="font-weight:700;text-align:right">${fmtN(grandTotal)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td></td></tr><tr class="tr"><td colspan="2" style="text-align:center">實付</td><td></td></tr>`;
     const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div><div class="ir"><span class="ib">對帳期間：</span><span>${dateRange}</span></div></div></div>`;
     return {
       r: flatRows.map(r => r.html),
