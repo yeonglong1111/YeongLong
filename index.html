@@ -4149,25 +4149,26 @@ function genQuotePrintHTML(quote, cust) {
   const total = quote.total != null ? quote.total : (quote.taxType === '未稅' ? qBase + Math.round(qBase * 0.05) : qBase);
   const qTax = !hasTax ? 0 : (quote.tax != null ? quote.tax : total - Math.round(total / 1.05));
   const qNet = total - qTax;
-  const cols = 8;
+  const cols = 9;
 
   const rowsData = [];
   items.forEach((item, i) => {
     const d = item.orderDate ? toROC(item.orderDate).replace(/-/g, '') : roc.replace(/-/g, '');
-    rowsData.push(`<td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product} ${item.color}</td><td>${item.size}</td><td>${item.qty}</td><td>${item.unitPrice}</td><td>${fmtN(item.amount)}</td><td>${item.note || ''}</td>`);
+    rowsData.push(`<td>${i + 1}</td><td>${d}</td><td style="text-align:left;padding-left:4px">${item.product || ''}</td><td>${item.color || ''}</td><td>${item.size || ''}</td><td>${item.qty || ''}</td><td>${item.unitPrice || ''}</td><td>${item.amount ? fmtN(item.amount) : ''}</td><td>${item.note || ''}</td>`);
   });
-  if (quote.shipping > 0) rowsData.push(`<td>${items.length + 1}</td><td></td><td style="text-align:left;padding-left:4px">運費</td><td></td><td>1</td><td></td><td>${fmtN(quote.shipping)}</td><td></td>`);
+  if (quote.shipping > 0) rowsData.push(`<td>${items.length + 1}</td><td></td><td style="text-align:left;padding-left:4px">運費</td><td></td><td></td><td>1</td><td></td><td>${fmtN(quote.shipping)}</td><td></td>`);
 
   const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
   const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div><div class="ir"><span class="ib">報價單號：</span><span>${quote.quoteNumber || ''}</span></div><div class="ir"><span class="ib">報價日期：</span><span>${roc}</span></div><div class="ir"><span class="ib">有效期限：</span><span>${quote.validUntil ? toROC(quote.validUntil) : '—'}</span></div></div></div>`;
-  const chH = `<th style="width:4%">No.</th><th style="width:9%">日期</th><th style="width:29%;text-align:left;padding-left:6px">產名規格</th><th style="width:10%">尺寸(CM)</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:12%">金額</th><th style="width:14%">備註</th>`;
+  const chH = `<th style="width:4%">No.</th><th style="width:8%">日期</th><th style="width:19%;text-align:left;padding-left:6px">產品</th><th style="width:9%">顏色</th><th style="width:10%">規格</th><th style="width:9%">數量</th><th style="width:11%">單價</th><th style="width:13%">金額</th><th style="width:17%">備註</th>`;
   const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　Line ID：${COMPANY.line}</div></div>`;
-  const signH = `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${hasTax ? fmtN(qNet) : fmtN(total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">${quote.taxType === '含稅' ? '內含營業稅 5%' : '營業稅 5%'}</td><td colspan="2">${hasTax ? fmtN(qTax) : ''}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2">${hasTax ? fmtN(total) : ''}</td></tr>`;
+  const taxLbl = quote.taxType === '含稅' ? '內含營業稅 5%' : quote.taxType === '未稅' ? '營業稅 5%' : '營業稅';
+  const signH = `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="4" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${hasTax ? fmtN(qNet) : fmtN(total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">${taxLbl}</td><td colspan="2">${fmtN(qTax)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2">${fmtN(total)}</td></tr>`;
   const lItems = items.filter(it => it.product && it.product.includes('L型') && it.lDir);
   const lDiagH = lItems.length ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:18px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:10pt;font-weight:bold;margin-bottom:2px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:10pt;color:#555;margin-bottom:3px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB, 2.2) + '</div>').join('') + '</div>' : '';
   const noteTxt = (quote.note || '').replace(/\n/g, '<br>');
   const noteBody = `<strong>備註：</strong>${noteTxt ? '<br>' + noteTxt : ''}`;
-  const noteStamp = `<img src="${COMPANY_STAMP}" alt="勇龍有限公司" style="float:right;height:2.05cm;margin:0 0 0 14px;opacity:.9;transform:rotate(-3deg);-webkit-print-color-adjust:exact;print-color-adjust:exact">`;
+  const noteStamp = `<img src="${COMPANY_STAMP}" alt="勇龍有限公司" style="float:right;height:2.7cm;margin:0 18px 0 14px;opacity:.9;transform:rotate(-3deg) translateX(-10px);-webkit-print-color-adjust:exact;print-color-adjust:exact">`;
   const noteH = (quote.note || lDiagH) ? `<tr><td colspan="${cols}" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000;line-height:1.5">${noteStamp}${noteBody}${lDiagH}</td></tr>` : '';
   const noteBigH = (quote.note || lDiagH) ? `<div style="padding:8px 10px"><div style="font-size:12pt;line-height:1.6">${noteStamp}${noteBody}</div>${lDiagH}</div>` : '';
   const measRows = rowsData.map(tds => `<tr class="dr">${tds}</tr>`).join('');
@@ -4367,7 +4368,7 @@ function NewOrderModal({
     return p?.defaultPrice || 0;
   };
   const calcAmt = item => {
-    if (isPerCm(item.product)) return Math.round(item.size * item.qty * item.unitPrice);
+    if (isPerCm(item.product)) return Math.round((parseFloat(item.size) || 0) * item.qty * item.unitPrice);
     return Math.round((item.qty || 0) * (item.unitPrice || 0));
   };
   useEffect(() => {
@@ -4387,7 +4388,7 @@ function NewOrderModal({
         id: uid(),
         product: defProd,
         color: '',
-        size: 0,
+        size: '',
         qty: 1,
         unitPrice: up,
         amount: amt
@@ -4400,14 +4401,14 @@ function NewOrderModal({
       const arr = [...prev];
       const updated = {
         ...arr[idx],
-        [field]: ['size', 'qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
+        [field]: ['qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
       };
       if (field === 'product') {
         if (isPerCm(val)) {
           updated.size = updated.size || 160;
           updated.color = updated.color || (colors || COLORS)[0] || '白';
         } else {
-          updated.size = 0;
+          updated.size = '';
           updated.qty = updated.qty || 1;
         }
         updated.unitPrice = getPrice(cust.name, val, updated.color);
@@ -4434,7 +4435,7 @@ function NewOrderModal({
       id: uid(),
       product: defProd,
       color,
-      size: isPerCm(defProd) ? 160 : 0,
+      size: isPerCm(defProd) ? 160 : '',
       qty: 1,
       unitPrice: up
     };
@@ -4554,7 +4555,7 @@ function NewOrderModal({
     style: {
       width: '12%'
     }
-  }, "尺寸(CM)"), /*#__PURE__*/React.createElement("th", {
+  }, "規格"), /*#__PURE__*/React.createElement("th", {
     style: {
       width: '9%'
     }
@@ -4587,66 +4588,41 @@ function NewOrderModal({
       onChange: e => updItem(idx, 'product', e.target.value)
     }, products.map(p => /*#__PURE__*/React.createElement("option", {
       key: p.id
-    }, p.name)))), simple ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", {
-      colSpan: 2,
+    }, p.name)))), h("td", null, h("select", {
+      value: item.color || '',
+      onChange: e => updItem(idx, 'color', e.target.value),
       style: {
-        textAlign: 'center',
-        color: '#ccc',
-        fontSize: 11
+        width: '100%'
       }
-    }, "—"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    }, h("option", { value: '' }, "（空白）"), (colors || COLORS).map(c => h("option", { key: c, value: c }, c)))), h("td", null, h("input", {
+      value: item.size ? item.size : '',
+      onChange: e => updItem(idx, 'size', e.target.value),
+      placeholder: "規格",
+      style: {
+        width: '100%'
+      }
+    })), h("td", null, h("input", {
       type: "number",
-      value: item.qty,
+      value: item.qty || '',
       min: "1",
       onChange: e => updItem(idx, 'qty', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    })), h("td", null, h("input", {
       type: "number",
       step: "0.1",
-      value: item.unitPrice,
+      value: item.unitPrice || '',
       onChange: e => updItem(idx, 'unitPrice', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    })), h("td", null, h("input", {
       type: "number",
-      value: item.amount,
+      value: item.amount || '',
       onChange: e => updItem(idx, 'amount', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    })), h("td", null, h("input", {
       value: item.note || '',
       onChange: e => updItem(idx, 'note', e.target.value),
       placeholder: "備註",
       style: {
         width: '100%'
       }
-    }))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("select", {
-      value: item.color,
-      onChange: e => updItem(idx, 'color', e.target.value)
-    }, (colors || COLORS).map(c => /*#__PURE__*/React.createElement("option", {
-      key: c
-    }, c)))), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      value: item.size,
-      min: "1",
-      onChange: e => updItem(idx, 'size', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      value: item.qty,
-      min: "1",
-      onChange: e => updItem(idx, 'qty', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      step: "0.1",
-      value: item.unitPrice,
-      onChange: e => updItem(idx, 'unitPrice', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      value: item.amount,
-      onChange: e => updItem(idx, 'amount', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      value: item.note || '',
-      onChange: e => updItem(idx, 'note', e.target.value),
-      placeholder: "備註",
-      style: {
-        width: '100%'
-      }
-    }))), /*#__PURE__*/React.createElement("td", {
+    })), /*#__PURE__*/React.createElement("td", {
       style: {
         whiteSpace: 'nowrap'
       }
@@ -4883,7 +4859,7 @@ function EditOrderModal({
     return p?.defaultPrice || 0;
   };
   const calcAmt = item => {
-    if (isPerCm(item.product)) return Math.round(item.size * item.qty * item.unitPrice);
+    if (isPerCm(item.product)) return Math.round((parseFloat(item.size) || 0) * item.qty * item.unitPrice);
     return Math.round((item.qty || 0) * (item.unitPrice || 0));
   };
   const updItem = (idx, field, val) => {
@@ -4891,14 +4867,14 @@ function EditOrderModal({
       const arr = [...prev];
       const updated = {
         ...arr[idx],
-        [field]: ['size', 'qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
+        [field]: ['qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
       };
       if (field === 'product') {
         if (isPerCm(val)) {
           updated.size = updated.size || 160;
           updated.color = updated.color || (colors || COLORS)[0] || '白';
         } else {
-          updated.size = 0;
+          updated.size = '';
           updated.qty = updated.qty || 1;
         }
         updated.unitPrice = getPrice(cust?.name || '', val, updated.color);
@@ -4925,7 +4901,7 @@ function EditOrderModal({
       id: uid(),
       product: defProd,
       color,
-      size: isPerCm(defProd) ? 160 : 0,
+      size: isPerCm(defProd) ? 160 : '',
       qty: 1,
       unitPrice: up
     };
@@ -5031,7 +5007,7 @@ function EditOrderModal({
     style: {
       width: '12%'
     }
-  }, "尺寸(CM)"), /*#__PURE__*/React.createElement("th", {
+  }, "規格"), /*#__PURE__*/React.createElement("th", {
     style: {
       width: '9%'
     }
@@ -5064,66 +5040,41 @@ function EditOrderModal({
       onChange: e => updItem(idx, 'product', e.target.value)
     }, products.map(p => /*#__PURE__*/React.createElement("option", {
       key: p.id
-    }, p.name)))), simple ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", {
-      colSpan: 2,
+    }, p.name)))), h("td", null, h("select", {
+      value: item.color || '',
+      onChange: e => updItem(idx, 'color', e.target.value),
       style: {
-        textAlign: 'center',
-        color: '#ccc',
-        fontSize: 11
+        width: '100%'
       }
-    }, "—"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    }, h("option", { value: '' }, "（空白）"), (colors || COLORS).map(c => h("option", { key: c, value: c }, c)))), h("td", null, h("input", {
+      value: item.size ? item.size : '',
+      onChange: e => updItem(idx, 'size', e.target.value),
+      placeholder: "規格",
+      style: {
+        width: '100%'
+      }
+    })), h("td", null, h("input", {
       type: "number",
-      value: item.qty,
+      value: item.qty || '',
       min: "1",
       onChange: e => updItem(idx, 'qty', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    })), h("td", null, h("input", {
       type: "number",
       step: "0.1",
-      value: item.unitPrice,
+      value: item.unitPrice || '',
       onChange: e => updItem(idx, 'unitPrice', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    })), h("td", null, h("input", {
       type: "number",
-      value: item.amount,
+      value: item.amount || '',
       onChange: e => updItem(idx, 'amount', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    })), h("td", null, h("input", {
       value: item.note || '',
       onChange: e => updItem(idx, 'note', e.target.value),
       placeholder: "備註",
       style: {
         width: '100%'
       }
-    }))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("select", {
-      value: item.color,
-      onChange: e => updItem(idx, 'color', e.target.value)
-    }, (colors || COLORS).map(c => /*#__PURE__*/React.createElement("option", {
-      key: c
-    }, c)))), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      value: item.size,
-      min: "1",
-      onChange: e => updItem(idx, 'size', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      value: item.qty,
-      min: "1",
-      onChange: e => updItem(idx, 'qty', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      step: "0.1",
-      value: item.unitPrice,
-      onChange: e => updItem(idx, 'unitPrice', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      type: "number",
-      value: item.amount,
-      onChange: e => updItem(idx, 'amount', e.target.value)
-    })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-      value: item.note || '',
-      onChange: e => updItem(idx, 'note', e.target.value),
-      placeholder: "備註",
-      style: {
-        width: '100%'
-      }
-    }))), /*#__PURE__*/React.createElement("td", {
+    })), /*#__PURE__*/React.createElement("td", {
       style: {
         whiteSpace: 'nowrap'
       }
@@ -6173,7 +6124,7 @@ function NewQuoteModal({
     return p?.defaultPrice || 0;
   };
   const calcAmt = item => {
-    if (isPerCm(item.product)) return Math.round(item.size * item.qty * item.unitPrice);
+    if (isPerCm(item.product)) return Math.round((parseFloat(item.size) || 0) * item.qty * item.unitPrice);
     return Math.round((item.qty || 0) * (item.unitPrice || 0));
   };
   useEffect(() => {
@@ -6184,7 +6135,7 @@ function NewQuoteModal({
       const initItem = isPerCm(defProd) ? {
         id: uid(), product: defProd, color, size: 160, qty: 1, unitPrice: up, amount: amt
       } : {
-        id: uid(), product: defProd, color: '', size: 0, qty: 1, unitPrice: up, amount: amt
+        id: uid(), product: defProd, color: '', size: '', qty: 1, unitPrice: up, amount: amt
       };
       setItems([initItem]);
     }
@@ -6194,14 +6145,14 @@ function NewQuoteModal({
       const arr = [...prev];
       const updated = {
         ...arr[idx],
-        [field]: ['size', 'qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
+        [field]: ['qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
       };
       if (field === 'product') {
         if (isPerCm(val)) {
           updated.size = updated.size || 160;
           updated.color = updated.color || (colors || COLORS)[0] || '白';
         } else {
-          updated.size = 0;
+          updated.size = '';
           updated.qty = updated.qty || 1;
         }
         updated.unitPrice = getPrice(custName, val, updated.color);
@@ -6225,7 +6176,7 @@ function NewQuoteModal({
     const color = (colors || COLORS)[0] || '白';
     const up = getPrice(custName, defProd, color);
     const newItem = {
-      id: uid(), product: defProd, color, size: isPerCm(defProd) ? 160 : 0, qty: 1, unitPrice: up
+      id: uid(), product: defProd, color, size: isPerCm(defProd) ? 160 : '', qty: 1, unitPrice: up
     };
     setItems(prev => [...prev, { ...newItem, amount: calcAmt(newItem) }]);
   };
@@ -6300,13 +6251,13 @@ function NewQuoteModal({
   const itemRow = (item, idx) => {
     return h("tr", { key: item.id },
       h("td", { style: { color: '#999' } }, idx + 1),
-      h("td", null, h("input", { list: "new-quote-prod-list", value: item.product, onChange: e => updItem(idx, 'product', e.target.value), placeholder: "輸入或選擇產品", style: { width: '100%', minWidth: 110 } })),
-      h("td", null, h("select", { value: item.color, onChange: e => updItem(idx, 'color', e.target.value) }, h("option", { key: "無" }, "無"), (colors || COLORS).map(c => h("option", { key: c }, c)))),
-      h("td", null, h("input", { type: "number", value: item.size, min: "0", onChange: e => updItem(idx, 'size', e.target.value) })),
-      h("td", null, h("input", { type: "number", value: item.qty, min: "1", onChange: e => updItem(idx, 'qty', e.target.value) })),
-      h("td", null, h("input", { type: "number", step: "0.1", value: item.unitPrice, onChange: e => updItem(idx, 'unitPrice', e.target.value) })),
-      h("td", null, h("input", { type: "number", value: item.amount, onChange: e => updItem(idx, 'amount', e.target.value) })),
-      h("td", null, h("input", { value: item.note || '', onChange: e => updItem(idx, 'note', e.target.value), placeholder: "備註", style: { width: 80 } })),
+      h("td", null, h("input", { list: "new-quote-prod-list", value: item.product, onChange: e => updItem(idx, 'product', e.target.value), placeholder: "輸入或選擇產品", style: { width: '100%' } })),
+      h("td", null, h("input", { list: "new-quote-color-list", value: item.color || '', onChange: e => updItem(idx, 'color', e.target.value), placeholder: "輸入或選擇顏色", style: { width: '100%' } })),
+      h("td", null, h("input", { value: item.size ? item.size : '', onChange: e => updItem(idx, 'size', e.target.value), placeholder: "規格", style: { width: '100%' } })),
+      h("td", null, h("input", { type: "number", value: item.qty || '', min: "0", onChange: e => updItem(idx, 'qty', e.target.value) })),
+      h("td", null, h("input", { type: "number", step: "0.1", value: item.unitPrice || '', onChange: e => updItem(idx, 'unitPrice', e.target.value) })),
+      h("td", null, h("input", { type: "number", value: item.amount || '', onChange: e => updItem(idx, 'amount', e.target.value) })),
+      h("td", null, h("input", { value: item.note || '', onChange: e => updItem(idx, 'note', e.target.value), placeholder: "備註", style: { width: '100%' } })),
       h("td", { style: { whiteSpace: 'nowrap' } },
         h("button", { className: "btn btn-sm", style: { padding: '2px 4px', marginRight: 2, fontSize: 12 }, onClick: () => moveItem(idx, -1), disabled: idx === 0 }, "↑"),
         h("button", { className: "btn btn-sm", style: { padding: '2px 4px', marginRight: 2, fontSize: 12 }, onClick: () => moveItem(idx, 1), disabled: idx === items.length - 1 }, "↓"),
@@ -6316,8 +6267,9 @@ function NewQuoteModal({
   };
   return h("div", { className: "modal-bg" },
     h("datalist", { id: "new-quote-prod-list" }, products.map(p => h("option", { key: p.id, value: p.name }))),
+    h("datalist", { id: "new-quote-color-list" }, h("option", { value: "無" }), (colors || COLORS).map(c => h("option", { key: c, value: c }))),
     h("datalist", { id: "new-quote-cust-list" }, customers.map(c => h("option", { key: c.id, value: c.name }))),
-    h("div", { className: "modal" },
+    h("div", { className: "modal wide" },
       h("div", { className: "modal-title" },
         h("span", null, "✦ 新增報價單"),
         h("button", { className: "btn btn-sm", onClick: onClose }, "✕ 關閉")
@@ -6340,15 +6292,15 @@ function NewQuoteModal({
       h("div", { style: { overflowX: 'auto' } },
         h("table", { className: "items-table" },
           h("thead", null, h("tr", null,
-            h("th", { style: { width: 30 } }, "No."),
-            h("th", { style: { minWidth: 120 } }, "產品"),
-            h("th", { style: { width: 55 } }, "顏色"),
-            h("th", { style: { width: 70 } }, "規格"),
-            h("th", { style: { width: 50 } }, "數量"),
-            h("th", { style: { width: 65 } }, "單價/cm"),
-            h("th", { style: { width: 75 } }, "金額(NT$)"),
-            h("th", { style: { width: 90 } }, "備註"),
-            h("th", { style: { width: 80 } })
+            h("th", { style: { width: '4%' } }, "No."),
+            h("th", { style: { width: '19%', minWidth: 90 } }, "產品"),
+            h("th", { style: { width: '12%' } }, "顏色"),
+            h("th", { style: { width: '12%' } }, "規格"),
+            h("th", { style: { width: '9%' } }, "數量"),
+            h("th", { style: { width: '12%' } }, "單價/cm"),
+            h("th", { style: { width: '12%' } }, "金額(NT$)"),
+            h("th", { style: { width: '10%' } }, "備註"),
+            h("th", { style: { width: '10%' } })
           )),
           h("tbody", null, items.map(itemRow))
         )
@@ -6465,7 +6417,7 @@ function EditQuoteModal({
     return p?.defaultPrice || 0;
   };
   const calcAmt = item => {
-    if (isPerCm(item.product)) return Math.round(item.size * item.qty * item.unitPrice);
+    if (isPerCm(item.product)) return Math.round((parseFloat(item.size) || 0) * item.qty * item.unitPrice);
     return Math.round((item.qty || 0) * (item.unitPrice || 0));
   };
   const updItem = (idx, field, val) => {
@@ -6473,14 +6425,14 @@ function EditQuoteModal({
       const arr = [...prev];
       const updated = {
         ...arr[idx],
-        [field]: ['size', 'qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
+        [field]: ['qty', 'amount', 'unitPrice', 'lSideA', 'lSideB'].includes(field) ? Number(val) || 0 : val
       };
       if (field === 'product') {
         if (isPerCm(val)) {
           updated.size = updated.size || 160;
           updated.color = updated.color || (colors || COLORS)[0] || '白';
         } else {
-          updated.size = 0;
+          updated.size = '';
           updated.qty = updated.qty || 1;
         }
         updated.unitPrice = getPrice(custName, val, updated.color);
@@ -6504,7 +6456,7 @@ function EditQuoteModal({
     const color = (colors || COLORS)[0] || '白';
     const up = getPrice(custName, defProd, color);
     const newItem = {
-      id: uid(), product: defProd, color, size: isPerCm(defProd) ? 160 : 0, qty: 1, unitPrice: up
+      id: uid(), product: defProd, color, size: isPerCm(defProd) ? 160 : '', qty: 1, unitPrice: up
     };
     setItems(prev => [...prev, { ...newItem, amount: calcAmt(newItem) }]);
   };
@@ -6579,13 +6531,13 @@ function EditQuoteModal({
   const itemRow = (item, idx) => {
     return h("tr", { key: item.id },
       h("td", { style: { color: '#999' } }, idx + 1),
-      h("td", null, h("input", { list: "edit-quote-prod-list", value: item.product, onChange: e => updItem(idx, 'product', e.target.value), placeholder: "輸入或選擇產品", style: { width: '100%', minWidth: 110 } })),
-      h("td", null, h("select", { value: item.color, onChange: e => updItem(idx, 'color', e.target.value) }, h("option", { key: "無" }, "無"), (colors || COLORS).map(c => h("option", { key: c }, c)))),
-      h("td", null, h("input", { type: "number", value: item.size, min: "0", onChange: e => updItem(idx, 'size', e.target.value) })),
-      h("td", null, h("input", { type: "number", value: item.qty, min: "1", onChange: e => updItem(idx, 'qty', e.target.value) })),
-      h("td", null, h("input", { type: "number", step: "0.1", value: item.unitPrice, onChange: e => updItem(idx, 'unitPrice', e.target.value) })),
-      h("td", null, h("input", { type: "number", value: item.amount, onChange: e => updItem(idx, 'amount', e.target.value) })),
-      h("td", null, h("input", { value: item.note || '', onChange: e => updItem(idx, 'note', e.target.value), placeholder: "備註", style: { width: 80 } })),
+      h("td", null, h("input", { list: "edit-quote-prod-list", value: item.product, onChange: e => updItem(idx, 'product', e.target.value), placeholder: "輸入或選擇產品", style: { width: '100%' } })),
+      h("td", null, h("input", { list: "edit-quote-color-list", value: item.color || '', onChange: e => updItem(idx, 'color', e.target.value), placeholder: "輸入或選擇顏色", style: { width: '100%' } })),
+      h("td", null, h("input", { value: item.size ? item.size : '', onChange: e => updItem(idx, 'size', e.target.value), placeholder: "規格", style: { width: '100%' } })),
+      h("td", null, h("input", { type: "number", value: item.qty || '', min: "0", onChange: e => updItem(idx, 'qty', e.target.value) })),
+      h("td", null, h("input", { type: "number", step: "0.1", value: item.unitPrice || '', onChange: e => updItem(idx, 'unitPrice', e.target.value) })),
+      h("td", null, h("input", { type: "number", value: item.amount || '', onChange: e => updItem(idx, 'amount', e.target.value) })),
+      h("td", null, h("input", { value: item.note || '', onChange: e => updItem(idx, 'note', e.target.value), placeholder: "備註", style: { width: '100%' } })),
       h("td", { style: { whiteSpace: 'nowrap' } },
         h("button", { className: "btn btn-sm", style: { padding: '2px 4px', marginRight: 2, fontSize: 12 }, onClick: () => moveItem(idx, -1), disabled: idx === 0 }, "↑"),
         h("button", { className: "btn btn-sm", style: { padding: '2px 4px', marginRight: 2, fontSize: 12 }, onClick: () => moveItem(idx, 1), disabled: idx === items.length - 1 }, "↓"),
@@ -6595,8 +6547,9 @@ function EditQuoteModal({
   };
   return h("div", { className: "modal-bg" },
     h("datalist", { id: "edit-quote-prod-list" }, products.map(p => h("option", { key: p.id, value: p.name }))),
+    h("datalist", { id: "edit-quote-color-list" }, h("option", { value: "無" }), (colors || COLORS).map(c => h("option", { key: c, value: c }))),
     h("datalist", { id: "edit-quote-cust-list" }, customers.map(c => h("option", { key: c.id, value: c.name }))),
-    h("div", { className: "modal" },
+    h("div", { className: "modal wide" },
       h("div", { className: "modal-title" },
         h("span", null, "✏️ 編輯報價單"),
         h("button", { className: "btn btn-sm", onClick: onClose }, "✕ 關閉")
@@ -6619,15 +6572,15 @@ function EditQuoteModal({
       h("div", { style: { overflowX: 'auto' } },
         h("table", { className: "items-table" },
           h("thead", null, h("tr", null,
-            h("th", { style: { width: 30 } }, "No."),
-            h("th", { style: { minWidth: 120 } }, "產品"),
-            h("th", { style: { width: 55 } }, "顏色"),
-            h("th", { style: { width: 70 } }, "尺寸(CM)"),
-            h("th", { style: { width: 50 } }, "數量"),
-            h("th", { style: { width: 65 } }, "單價/cm"),
-            h("th", { style: { width: 75 } }, "金額(NT$)"),
-            h("th", { style: { width: 90 } }, "備註"),
-            h("th", { style: { width: 80 } })
+            h("th", { style: { width: '4%' } }, "No."),
+            h("th", { style: { width: '19%', minWidth: 90 } }, "產品"),
+            h("th", { style: { width: '12%' } }, "顏色"),
+            h("th", { style: { width: '12%' } }, "規格"),
+            h("th", { style: { width: '9%' } }, "數量"),
+            h("th", { style: { width: '12%' } }, "單價/cm"),
+            h("th", { style: { width: '12%' } }, "金額(NT$)"),
+            h("th", { style: { width: '10%' } }, "備註"),
+            h("th", { style: { width: '10%' } })
           )),
           h("tbody", null, items.map(itemRow))
         )
@@ -7162,10 +7115,10 @@ function MonthlyReport({
       bySpec[key].qty += item.qty;
       bySpec[key].revenue += item.amount;
       const cat = item.product;
-      bySpec[key].cost += Math.round(item.size * (costs[cat] || 0) * item.qty);
+      bySpec[key].cost += Math.round((parseFloat(item.size) || 0) * (costs[cat] || 0) * item.qty);
       totalRev += item.amount;
       totalQty += item.qty;
-      totalCost += Math.round(item.size * (costs[cat] || 0) * item.qty);
+      totalCost += Math.round((parseFloat(item.size) || 0) * (costs[cat] || 0) * item.qty);
     });
     if (o.shipping > 0) totalRev += o.shipping;
   });
