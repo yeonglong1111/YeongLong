@@ -75,6 +75,9 @@ table.data tr:hover td{background:#f8fafd}
   .g3,.g4{grid-template-columns:1fr 1fr}
   .g2{grid-template-columns:1fr}
 }
+/* 表格全部置中（訂購單、銷貨單、報價單列表） */
+.po-items th, .po-items td, .tbl-center th, .tbl-center td { text-align: center !important; }
+.po-items input, .tbl-center input { text-align: center; }
 </style>
 </head>
 <body>
@@ -3742,6 +3745,25 @@ const addDays = (iso, n) => {
   return d.toISOString().slice(0, 10);
 };
 const h = React.createElement;
+// 訂購單備註：數量 ÷ 規格 = 支數，每次修改都重新計算；備註裡其他文字保留
+const poPiecesNote = it => {
+  const len = parseFloat(it.length);
+  const q = Number(it.qty) || 0;
+  if (!len || !q) return '';
+  return `${Math.round(q / len * 100) / 100}支`;
+};
+const withPieces = it => {
+  const rest = (it.note || '').replace(/(共\s*)?[\d.]+\s*支/, '').trim();
+  return [poPiecesNote(it), rest].filter(Boolean).join(' ');
+};
+// 使用者自己改過的備註不再自動計算（舊資料：備註和自動算出的不同就視為手動）
+const isManualNote = it => {
+  if (it.noteManual !== undefined) return it.noteManual;
+  const n = (it.note || '').trim();
+  if (!n) return false;
+  return n.replace(/^共\s*([\d.]+)\s*支$/, '$1支') !== poPiecesNote(it) && n !== withPieces(it);
+};
+const poNote = it => isManualNote(it) ? it.note || '' : withPieces(it);
 const getUP = (prices, name, prod) => {
   const cat = PCAT[prod];
   return (prices[name] || STD)[cat] || STD[cat] || 0;
@@ -4380,12 +4402,12 @@ function NewOrderModal({
     if (cust) {
       const color = (colors || COLORS)[0] || '白';
       const up = getPrice(cust.name, defProd, color);
-      const amt = isPerCm(defProd) ? Math.round(160 * 1 * up) : Math.round(1 * up);
+      const amt = isPerCm(defProd) ? 0 : Math.round(1 * up);
       const initItem = isPerCm(defProd) ? {
         id: uid(),
         product: defProd,
         color,
-        size: 160,
+        size: '',
         qty: 1,
         unitPrice: up,
         amount: amt
@@ -4410,7 +4432,7 @@ function NewOrderModal({
       };
       if (field === 'product') {
         if (isPerCm(val)) {
-          updated.size = updated.size || 160;
+          updated.size = updated.size || '';
           updated.color = updated.color || (colors || COLORS)[0] || '白';
         } else {
           updated.size = '';
@@ -4434,20 +4456,31 @@ function NewOrderModal({
     });
   };
   const addItem = () => {
-    const color = (colors || COLORS)[0] || '白';
-    const up = getPrice(cust.name, defProd, color);
-    const newItem = {
-      id: uid(),
-      product: defProd,
-      color,
-      size: isPerCm(defProd) ? 160 : '',
-      qty: 1,
-      unitPrice: up
-    };
-    setItems(prev => [...prev, {
-      ...newItem,
-      amount: calcAmt(newItem)
-    }]);
+    // 新品項沿用上一個品項的產品、顏色、單價；規格留空讓使用者自行輸入
+    setItems(prev => {
+      const last = prev[prev.length - 1];
+      const product = last ? last.product : defProd;
+      const color = last ? last.color : (colors || COLORS)[0] || '白';
+      const up = last ? last.unitPrice : getPrice(cust.name, product, color);
+      const newItem = {
+        id: uid(),
+        product,
+        color,
+        size: '',
+        qty: 1,
+        unitPrice: up
+      };
+      if (isLType(product)) {
+        newItem.lDir = last?.lDir || '左下';
+        newItem.lSideA = 0;
+        newItem.lSideB = 0;
+        newItem.note = buildLNote(newItem.lDir, 0, 0);
+      }
+      return [...prev, {
+        ...newItem,
+        amount: calcAmt(newItem)
+      }];
+    });
   };
   const delItem = idx => setItems(prev => prev.filter((_, i) => i !== idx));
   const moveItem = (idx, dir) => setItems(prev => {
@@ -4869,7 +4902,7 @@ function EditOrderModal({
       };
       if (field === 'product') {
         if (isPerCm(val)) {
-          updated.size = updated.size || 160;
+          updated.size = updated.size || '';
           updated.color = updated.color || (colors || COLORS)[0] || '白';
         } else {
           updated.size = '';
@@ -4893,20 +4926,31 @@ function EditOrderModal({
     });
   };
   const addItem = () => {
-    const color = (colors || COLORS)[0] || '白';
-    const up = getPrice(cust?.name || '', defProd, color);
-    const newItem = {
-      id: uid(),
-      product: defProd,
-      color,
-      size: isPerCm(defProd) ? 160 : '',
-      qty: 1,
-      unitPrice: up
-    };
-    setItems(prev => [...prev, {
-      ...newItem,
-      amount: calcAmt(newItem)
-    }]);
+    // 新品項沿用上一個品項的產品、顏色、單價；規格留空讓使用者自行輸入
+    setItems(prev => {
+      const last = prev[prev.length - 1];
+      const product = last ? last.product : defProd;
+      const color = last ? last.color : (colors || COLORS)[0] || '白';
+      const up = last ? last.unitPrice : getPrice(cust?.name || '', product, color);
+      const newItem = {
+        id: uid(),
+        product,
+        color,
+        size: '',
+        qty: 1,
+        unitPrice: up
+      };
+      if (isLType(product)) {
+        newItem.lDir = last?.lDir || '左下';
+        newItem.lSideA = 0;
+        newItem.lSideB = 0;
+        newItem.note = buildLNote(newItem.lDir, 0, 0);
+      }
+      return [...prev, {
+        ...newItem,
+        amount: calcAmt(newItem)
+      }];
+    });
   };
   const delItem = idx => setItems(prev => prev.filter((_, i) => i !== idx));
   const moveItem = (idx, dir) => setItems(prev => {
@@ -5367,6 +5411,7 @@ function NewPOModal({
   const [items, setItems] = useState([{
     id: uid(),
     spec: '',
+    length: '',
     qty: 1,
     unitPrice: 0,
     amount: 0
@@ -5380,6 +5425,8 @@ function NewPOModal({
         [field]: num
       };
       if (field !== 'amount') updated.amount = Math.round((updated.qty || 0) * (updated.unitPrice || 0));
+      if (field === 'note') updated.noteManual = String(val).trim() !== '';
+      if ((field === 'qty' || field === 'length') && !isManualNote(arr[idx])) updated.note = withPieces(updated);
       arr[idx] = updated;
       return arr;
     });
@@ -5387,6 +5434,7 @@ function NewPOModal({
   const addItem = () => setItems(prev => [...prev, {
     id: uid(),
     spec: '',
+    length: '',
     qty: 1,
     unitPrice: 0,
     amount: 0
@@ -5412,7 +5460,7 @@ function NewPOModal({
   }, /*#__PURE__*/React.createElement("div", {
     className: "modal",
     style: {
-      maxWidth: 680
+      maxWidth: 900
     },
     onClick: e => e.stopPropagation()
   }, /*#__PURE__*/React.createElement("div", {
@@ -5460,11 +5508,11 @@ function NewPOModal({
       overflowX: 'auto'
     }
   }, /*#__PURE__*/React.createElement("table", {
-    className: "data",
+    className: "data po-items",
     style: {
       marginBottom: 8
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "#"), /*#__PURE__*/React.createElement("th", null, "品名規格"), /*#__PURE__*/React.createElement("th", null, "數量"), /*#__PURE__*/React.createElement("th", null, "單價"), /*#__PURE__*/React.createElement("th", null, "金額"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, items.map((it, idx) => /*#__PURE__*/React.createElement("tr", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "#"), /*#__PURE__*/React.createElement("th", null, "品名"), /*#__PURE__*/React.createElement("th", null, "規格"), /*#__PURE__*/React.createElement("th", null, "數量"), /*#__PURE__*/React.createElement("th", null, "單價"), /*#__PURE__*/React.createElement("th", null, "金額"), /*#__PURE__*/React.createElement("th", null, "備註"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, items.map((it, idx) => /*#__PURE__*/React.createElement("tr", {
     key: it.id
   }, /*#__PURE__*/React.createElement("td", {
     style: {
@@ -5478,7 +5526,14 @@ function NewPOModal({
     style: {
       width: '100%'
     },
-    placeholder: "品名/規格"
+    placeholder: "品名"
+  })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    value: it.length || '',
+    onChange: e => updItem(idx, 'length', e.target.value),
+    style: {
+      width: 100
+    },
+    placeholder: "規格/長度"
   })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
     type: "number",
     value: it.qty,
@@ -5504,6 +5559,13 @@ function NewPOModal({
     style: {
       width: 90
     }
+  })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    value: it.note || '',
+    onChange: e => updItem(idx, 'note', e.target.value),
+    style: {
+      width: 110
+    },
+    placeholder: "備註"
   })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("button", {
     className: "btn",
     style: {
@@ -5557,7 +5619,7 @@ function EditPOModal({
   const [dueDate, setDueDate] = useState(po.dueDate || '');
   const [payMethod, setPayMethod] = useState(po.payMethod || '轉帳');
   const [note, setNote] = useState(po.note || '');
-  const [items, setItems] = useState(po.items || []);
+  const [items, setItems] = useState((po.items || []).map(it => ({ ...it, note: poNote(it), noteManual: isManualNote(it) })));
   const updItem = (idx, field, val) => {
     setItems(prev => {
       const arr = [...prev];
@@ -5567,6 +5629,8 @@ function EditPOModal({
         [field]: num
       };
       if (field !== 'amount') updated.amount = Math.round((updated.qty || 0) * (updated.unitPrice || 0));
+      if (field === 'note') updated.noteManual = String(val).trim() !== '';
+      if ((field === 'qty' || field === 'length') && !isManualNote(arr[idx])) updated.note = withPieces(updated);
       arr[idx] = updated;
       return arr;
     });
@@ -5574,6 +5638,7 @@ function EditPOModal({
   const addItem = () => setItems(prev => [...prev, {
     id: uid(),
     spec: '',
+    length: '',
     qty: 1,
     unitPrice: 0,
     amount: 0
@@ -5599,7 +5664,7 @@ function EditPOModal({
   }, /*#__PURE__*/React.createElement("div", {
     className: "modal",
     style: {
-      maxWidth: 680
+      maxWidth: 900
     },
     onClick: e => e.stopPropagation()
   }, /*#__PURE__*/React.createElement("div", {
@@ -5647,11 +5712,11 @@ function EditPOModal({
       overflowX: 'auto'
     }
   }, /*#__PURE__*/React.createElement("table", {
-    className: "data",
+    className: "data po-items",
     style: {
       marginBottom: 8
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "#"), /*#__PURE__*/React.createElement("th", null, "品名規格"), /*#__PURE__*/React.createElement("th", null, "數量"), /*#__PURE__*/React.createElement("th", null, "單價"), /*#__PURE__*/React.createElement("th", null, "金額"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, items.map((it, idx) => /*#__PURE__*/React.createElement("tr", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "#"), /*#__PURE__*/React.createElement("th", null, "品名"), /*#__PURE__*/React.createElement("th", null, "規格"), /*#__PURE__*/React.createElement("th", null, "數量"), /*#__PURE__*/React.createElement("th", null, "單價"), /*#__PURE__*/React.createElement("th", null, "金額"), /*#__PURE__*/React.createElement("th", null, "備註"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, items.map((it, idx) => /*#__PURE__*/React.createElement("tr", {
     key: it.id
   }, /*#__PURE__*/React.createElement("td", {
     style: {
@@ -5665,7 +5730,14 @@ function EditPOModal({
     style: {
       width: '100%'
     },
-    placeholder: "品名/規格"
+    placeholder: "品名"
+  })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    value: it.length || '',
+    onChange: e => updItem(idx, 'length', e.target.value),
+    style: {
+      width: 100
+    },
+    placeholder: "規格/長度"
   })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
     type: "number",
     value: it.qty,
@@ -5691,6 +5763,13 @@ function EditPOModal({
     style: {
       width: 90
     }
+  })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+    value: it.note || '',
+    onChange: e => updItem(idx, 'note', e.target.value),
+    style: {
+      width: 110
+    },
+    placeholder: "備註"
   })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("button", {
     className: "btn",
     style: {
@@ -5771,6 +5850,71 @@ function PurchaseView({
     } : p);
     setPurchases(u);
     DB.save('yl-purchases', u);
+  };
+  // 直接在列表上編輯訂購單
+  const [editId, setEditId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const startEdit = po => {
+    setEditId(po.id);
+    setDraft({ ...po, items: (po.items || []).map(it => ({ ...it, id: it.id || uid(), note: poNote(it), noteManual: isManualNote(it) })) });
+  };
+  const cancelEdit = () => { setEditId(null); setDraft(null); };
+  const setD = (field, val) => setDraft(d => ({ ...d, [field]: val }));
+  const updDItem = (idx, field, val) => setDraft(d => {
+    const items = [...d.items];
+    const u = { ...items[idx], [field]: ['qty', 'unitPrice', 'amount'].includes(field) ? Number(val) || 0 : val };
+    if (field !== 'amount') u.amount = Math.round((u.qty || 0) * (u.unitPrice || 0));
+    if (field === 'note') u.noteManual = String(val).trim() !== '';
+    if ((field === 'qty' || field === 'length') && !isManualNote(items[idx])) u.note = withPieces(u);
+    items[idx] = u;
+    return { ...d, items };
+  });
+  const addDItem = () => setDraft(d => {
+    const last = d.items[d.items.length - 1];
+    const up = last ? last.unitPrice || 0 : 0;
+    return { ...d, items: [...d.items, { id: uid(), spec: last ? last.spec || '' : '', length: '', qty: 1, unitPrice: up, amount: Math.round(up) }] };
+  });
+  const delDItem = idx => setDraft(d => ({ ...d, items: d.items.filter((_, i) => i !== idx) }));
+  const saveEdit = () => {
+    if (!(draft.supplier || '').trim()) return alert('請選擇供應商');
+    const total = draft.items.reduce((s, i) => s + (i.amount || 0), 0);
+    updatePO({ ...draft, supplier: draft.supplier.trim(), total });
+    cancelEdit();
+  };
+  const renderEdit = po => {
+    const d = draft;
+    const total = d.items.reduce((s, i) => s + (i.amount || 0), 0);
+    const bg = { background: '#fffbe6' };
+    const numIn = (it, idx, field, width, extra) => h("input", { type: "number", value: it[field], min: "0", onChange: e => updDItem(idx, field, e.target.value), style: { width }, ...extra });
+    return h(React.Fragment, { key: po.id },
+      h("tr", { style: bg },
+        h("td", null,
+          h("input", { list: "supplier-list-inline", value: d.supplier || '', onChange: e => setD('supplier', e.target.value), style: { width: 120 } }),
+          h("datalist", { id: "supplier-list-inline" }, supplierList.map(s => h("option", { key: s.id, value: s.name })))),
+        h("td", null, h("input", { type: "date", value: d.date || '', onChange: e => setD('date', e.target.value) })),
+        h("td", null, h("input", { type: "date", value: d.dueDate || '', onChange: e => setD('dueDate', e.target.value) })),
+        h("td", null, h("select", { value: d.payMethod || '轉帳', onChange: e => setD('payMethod', e.target.value) }, h("option", null, "轉帳"), h("option", null, "現金"))),
+        h("td", { style: { fontSize: 12, color: '#888' } }, d.paid ? '已匯款' : '未匯款'),
+        h("td", { style: { textAlign: 'center' } }, d.items.length),
+        h("td", { style: { textAlign: 'right', fontWeight: 600 } }, fmtN(total)),
+        h("td", null, h("input", { value: d.note || '', onChange: e => setD('note', e.target.value), placeholder: "備註", style: { width: 120 } })),
+        h("td", { style: { whiteSpace: 'nowrap' } },
+          h("button", { className: "btn btn-primary", style: { marginRight: 4 }, onClick: saveEdit }, "儲存"),
+          h("button", { className: "btn", onClick: cancelEdit }, "取消"))),
+      h("tr", { style: bg },
+        h("td", { colSpan: 9, style: { padding: '4px 16px 8px' } },
+          h("table", { className: "po-items", style: { width: '100%', fontSize: 12, borderCollapse: 'collapse' } },
+            h("thead", null, h("tr", { style: { color: '#888' } },
+              ["品名", "規格", "數量", "單價", "金額", "備註", ""].map((txt, i) => h("th", { key: i, style: { textAlign: i < 2 || i === 5 ? 'left' : 'right', paddingRight: 16 } }, txt)))),
+            h("tbody", null, d.items.map((it, idx) => h("tr", { key: it.id },
+              h("td", { style: { paddingRight: 16 } }, h("input", { value: it.spec || '', onChange: e => updDItem(idx, 'spec', e.target.value), placeholder: "品名", style: { width: '100%' } })),
+              h("td", { style: { paddingRight: 16 } }, h("input", { value: it.length || '', onChange: e => updDItem(idx, 'length', e.target.value), placeholder: "規格/長度", style: { width: 100 } })),
+              h("td", { style: { textAlign: 'right', paddingRight: 16 } }, numIn(it, idx, 'qty', 60)),
+              h("td", { style: { textAlign: 'right', paddingRight: 16 } }, numIn(it, idx, 'unitPrice', 80, { step: "0.1" })),
+              h("td", { style: { textAlign: 'right', paddingRight: 16 } }, numIn(it, idx, 'amount', 90)),
+              h("td", { style: { paddingRight: 16 } }, h("input", { value: it.note || '', onChange: e => updDItem(idx, 'note', e.target.value), placeholder: "備註", style: { width: 110 } })),
+              h("td", { style: { textAlign: 'right' } }, h("button", { className: "btn", style: { color: '#c00', padding: '2px 8px' }, onClick: () => delDItem(idx) }, "✕")))))),
+          h("button", { className: "btn btn-sm", style: { marginTop: 6 }, onClick: addDItem }, "＋ 新增項目"))));
   };
   const suppliers = [...new Set(purchases.map(p => p.supplier))].filter(Boolean);
   const poMonths = [...new Set(purchases.map(p => toROCM(p.date)))].filter(Boolean).sort().reverse();
@@ -5899,8 +6043,8 @@ function PurchaseView({
       overflowX: 'auto'
     }
   }, /*#__PURE__*/React.createElement("table", {
-    className: "data"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "供應商"), /*#__PURE__*/React.createElement("th", null, "訂購日期"), /*#__PURE__*/React.createElement("th", null, "應匯款日期"), /*#__PURE__*/React.createElement("th", null, "付款方式"), /*#__PURE__*/React.createElement("th", null, "匯款狀態"), /*#__PURE__*/React.createElement("th", null, "項目數"), /*#__PURE__*/React.createElement("th", null, "合計（NT$）"), /*#__PURE__*/React.createElement("th", null, "備註"), /*#__PURE__*/React.createElement("th", null, "操作"))), /*#__PURE__*/React.createElement("tbody", null, filt.map(po => /*#__PURE__*/React.createElement(React.Fragment, {
+    className: "data po-items"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "供應商"), /*#__PURE__*/React.createElement("th", null, "訂購日期"), /*#__PURE__*/React.createElement("th", null, "應匯款日期"), /*#__PURE__*/React.createElement("th", null, "付款方式"), /*#__PURE__*/React.createElement("th", null, "匯款狀態"), /*#__PURE__*/React.createElement("th", null, "項目數"), /*#__PURE__*/React.createElement("th", null, "合計（NT$）"), /*#__PURE__*/React.createElement("th", null, "備註"), /*#__PURE__*/React.createElement("th", null, "操作"))), /*#__PURE__*/React.createElement("tbody", null, filt.map(po => editId === po.id ? renderEdit(po) : /*#__PURE__*/React.createElement(React.Fragment, {
     key: po.id
   }, /*#__PURE__*/React.createElement("tr", {
     style: {
@@ -5961,7 +6105,7 @@ function PurchaseView({
     style: {
       marginRight: 4
     },
-    onClick: () => setEditPO(po)
+    onClick: () => startEdit(po)
   }, "編輯"), /*#__PURE__*/React.createElement("button", {
     className: "btn",
     style: {
@@ -5978,6 +6122,7 @@ function PurchaseView({
       padding: '4px 16px 8px'
     }
   }, /*#__PURE__*/React.createElement("table", {
+    className: "po-items",
     style: {
       width: '100%',
       fontSize: 12,
@@ -5992,7 +6137,12 @@ function PurchaseView({
       textAlign: 'left',
       paddingRight: 16
     }
-  }, "品名規格"), /*#__PURE__*/React.createElement("th", {
+  }, "品名"), /*#__PURE__*/React.createElement("th", {
+    style: {
+      textAlign: 'left',
+      paddingRight: 16
+    }
+  }, "規格"), /*#__PURE__*/React.createElement("th", {
     style: {
       textAlign: 'right',
       paddingRight: 16
@@ -6006,13 +6156,22 @@ function PurchaseView({
     style: {
       textAlign: 'right'
     }
-  }, "金額"))), /*#__PURE__*/React.createElement("tbody", null, po.items.map((it, i) => /*#__PURE__*/React.createElement("tr", {
+  }, "金額"), /*#__PURE__*/React.createElement("th", {
+    style: {
+      textAlign: 'left',
+      paddingLeft: 16
+    }
+  }, "備註"))), /*#__PURE__*/React.createElement("tbody", null, po.items.map((it, i) => /*#__PURE__*/React.createElement("tr", {
     key: it.id || i
   }, /*#__PURE__*/React.createElement("td", {
     style: {
       paddingRight: 16
     }
   }, it.spec || '—'), /*#__PURE__*/React.createElement("td", {
+    style: {
+      paddingRight: 16
+    }
+  }, it.length || ''), /*#__PURE__*/React.createElement("td", {
     style: {
       textAlign: 'right',
       paddingRight: 16
@@ -6026,7 +6185,11 @@ function PurchaseView({
     style: {
       textAlign: 'right'
     }
-  }, fmtN(it.amount))))))))))))) : /*#__PURE__*/React.createElement("div", {
+  }, fmtN(it.amount)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      paddingLeft: 16
+    }
+  }, poNote(it))))))))))))) : /*#__PURE__*/React.createElement("div", {
     className: "empty"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6047,11 +6210,6 @@ function PurchaseView({
   }, "＋ 新增第一筆訂購單"))), showNew && /*#__PURE__*/React.createElement(NewPOModal, {
     onSave: savePO,
     onClose: () => setShowNew(false),
-    supplierList: supplierList
-  }), editPO && /*#__PURE__*/React.createElement(EditPOModal, {
-    po: editPO,
-    onUpdate: updatePO,
-    onClose: () => setEditPO(null),
     supplierList: supplierList
   }));
 }
@@ -6121,9 +6279,9 @@ function NewQuoteModal({
     if (custName) {
       const color = (colors || COLORS)[0] || '白';
       const up = getPrice(custName, defProd, color);
-      const amt = isPerCm(defProd) ? Math.round(160 * 1 * up) : Math.round(1 * up);
+      const amt = isPerCm(defProd) ? 0 : Math.round(1 * up);
       const initItem = isPerCm(defProd) ? {
-        id: uid(), product: defProd, color, size: 160, qty: 1, unitPrice: up, amount: amt
+        id: uid(), product: defProd, color, size: '', qty: 1, unitPrice: up, amount: amt
       } : {
         id: uid(), product: defProd, color: '', size: '', qty: 1, unitPrice: up, amount: amt
       };
@@ -6139,7 +6297,7 @@ function NewQuoteModal({
       };
       if (field === 'product') {
         if (isPerCm(val)) {
-          updated.size = updated.size || 160;
+          updated.size = updated.size || '';
           updated.color = updated.color || (colors || COLORS)[0] || '白';
         } else {
           updated.size = '';
@@ -6163,12 +6321,21 @@ function NewQuoteModal({
     });
   };
   const addItem = () => {
-    const color = (colors || COLORS)[0] || '白';
-    const up = getPrice(custName, defProd, color);
-    const newItem = {
-      id: uid(), product: defProd, color, size: isPerCm(defProd) ? 160 : '', qty: 1, unitPrice: up
-    };
-    setItems(prev => [...prev, { ...newItem, amount: calcAmt(newItem) }]);
+    // 新品項沿用上一個品項的產品、顏色、單價；規格留空讓使用者自行輸入
+    setItems(prev => {
+      const last = prev[prev.length - 1];
+      const product = last ? last.product : defProd;
+      const color = last ? last.color : (colors || COLORS)[0] || '白';
+      const up = last ? last.unitPrice : getPrice(custName, product, color);
+      const newItem = { id: uid(), product, color, size: '', qty: 1, unitPrice: up };
+      if (isLType(product)) {
+        newItem.lDir = last?.lDir || '左下';
+        newItem.lSideA = 0;
+        newItem.lSideB = 0;
+        newItem.note = buildLNote(newItem.lDir, 0, 0);
+      }
+      return [...prev, { ...newItem, amount: calcAmt(newItem) }];
+    });
   };
   const delItem = idx => setItems(prev => prev.filter((_, i) => i !== idx));
   const moveItem = (idx, dir) => setItems(prev => {
@@ -6415,7 +6582,7 @@ function EditQuoteModal({
       };
       if (field === 'product') {
         if (isPerCm(val)) {
-          updated.size = updated.size || 160;
+          updated.size = updated.size || '';
           updated.color = updated.color || (colors || COLORS)[0] || '白';
         } else {
           updated.size = '';
@@ -6439,12 +6606,21 @@ function EditQuoteModal({
     });
   };
   const addItem = () => {
-    const color = (colors || COLORS)[0] || '白';
-    const up = getPrice(custName, defProd, color);
-    const newItem = {
-      id: uid(), product: defProd, color, size: isPerCm(defProd) ? 160 : '', qty: 1, unitPrice: up
-    };
-    setItems(prev => [...prev, { ...newItem, amount: calcAmt(newItem) }]);
+    // 新品項沿用上一個品項的產品、顏色、單價；規格留空讓使用者自行輸入
+    setItems(prev => {
+      const last = prev[prev.length - 1];
+      const product = last ? last.product : defProd;
+      const color = last ? last.color : (colors || COLORS)[0] || '白';
+      const up = last ? last.unitPrice : getPrice(custName, product, color);
+      const newItem = { id: uid(), product, color, size: '', qty: 1, unitPrice: up };
+      if (isLType(product)) {
+        newItem.lDir = last?.lDir || '左下';
+        newItem.lSideA = 0;
+        newItem.lSideB = 0;
+        newItem.note = buildLNote(newItem.lDir, 0, 0);
+      }
+      return [...prev, { ...newItem, amount: calcAmt(newItem) }];
+    });
   };
   const delItem = idx => setItems(prev => prev.filter((_, i) => i !== idx));
   const moveItem = (idx, dir) => setItems(prev => {
@@ -6686,7 +6862,7 @@ function QuoteView({
         h("div", { style: { marginLeft: 'auto', alignSelf: 'flex-end', fontSize: 12, color: '#999' } }, "共 ", filt.length, " 筆　合計 NT$ ", fmtN(filt.reduce((s, q) => s + (q.total || 0), 0)))
       ),
       filt.length > 0 ? h("div", { style: { overflowX: 'auto' } },
-        h("table", { className: "data" },
+        h("table", { className: "data tbl-center" },
           h("thead", null, h("tr", null, ["客戶", "報價日期", "有效期限", "報價單號", "狀態", "項目數", "合計（NT$）", "備註", "操作"].map(t => h("th", { key: t }, t)))),
           h("tbody", null, filt.map(q => {
             const expired = q.validUntil && q.validUntil < today();
@@ -9480,7 +9656,7 @@ function App() {
       overflowX: 'auto'
     }
   }, /*#__PURE__*/React.createElement("table", {
-    className: "data"
+    className: "data tbl-center"
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "銷貨單號"), /*#__PURE__*/React.createElement("th", null, "客戶名稱"), /*#__PURE__*/React.createElement("th", null, "日期"), /*#__PURE__*/React.createElement("th", null, "項目數"), /*#__PURE__*/React.createElement("th", null, "金額（NT$）"), /*#__PURE__*/React.createElement("th", null, "操作"))), /*#__PURE__*/React.createElement("tbody", null, filtOrders.map(o => /*#__PURE__*/React.createElement(OrderRow, {
     key: o.id,
     order: o,
