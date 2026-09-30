@@ -4007,6 +4007,10 @@ function genPrintHTML(order, cust, showPrices) {
   const noteH = (order.note || lDiagH) ? `<tr><td colspan="${cols}" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000"><strong>備註：</strong>${order.note || ''}${lDiagH}</td></tr>` : '';
   // 放不下時，備註／L型圖獨立成一頁使用的版本（非表格列）
   const noteBigH = (order.note || lDiagH) ? `<div style="padding:8px 10px"><div style="font-size:12pt"><strong>備註：</strong>${order.note || ''}</div>${lDiagH}</div>` : '';
+  return genPagedPrintHTML({ rowsData, hdrH, infoH, chH, ftrH, signH, noteH, noteBigH, title });
+}
+// 共用的分頁列印版型（銷貨單／請款單／訂購單）
+function genPagedPrintHTML({ rowsData, hdrH, infoH, chH, ftrH, signH, noteH, noteBigH, title }) {
   const measRows = rowsData.map(tds => `<tr class="dr">${tds}</tr>`).join('');
   // 安全地嵌入 JSON，將 / 替換為 \/ 防止字串中出現 script 結束標籤
   const D = JSON.stringify({
@@ -4162,6 +4166,56 @@ function printDoc(order, cust, showPrices) {
   const w = window.open('', '_blank', 'width=820,height=800');
   if (!w) return;
   w.document.write(genPrintHTML(order, cust, showPrices));
+  w.document.close();
+}
+
+/* ===== PURCHASE ORDER PRINT ===== */
+// 訂購單稅額：未稅＝外加 5%；含稅＝單價已含稅（內含稅額）；無＝不計稅
+function poCalc(items, taxType) {
+  const subtotal = (items || []).reduce((s, i) => s + (i.amount || 0), 0);
+  const tax = taxType === '未稅' ? Math.round(subtotal * 0.05) : taxType === '含稅' ? subtotal - Math.round(subtotal / 1.05) : 0;
+  const total = taxType === '未稅' ? subtotal + tax : subtotal;
+  return { subtotal, tax, total, net: total - tax };
+}
+// 列表／列印用：依已儲存的 total、tax 取得未稅與含稅金額（舊資料沒有稅別 → 視為「無」）
+function poAmt(po) {
+  const total = po.total || 0;
+  const tax = po.tax || 0;
+  return { taxType: po.taxType || '無', net: total - tax, tax, total };
+}
+// 稅別下拉＋金額摘要（新增／編輯訂購單共用）
+function poTaxSelect(value, onChange) {
+  return h("select", { value, onChange: e => onChange(e.target.value) },
+    h("option", { value: "未稅" }, "未稅（外加 5% 稅）"),
+    h("option", { value: "含稅" }, "含稅價"),
+    h("option", { value: "無" }, "無（不計稅）"));
+}
+function poTaxSummary(c, taxType) {
+  if (taxType === '無') return "合計：NT$ " + fmtN(c.total);
+  return "未稅金額 NT$ " + fmtN(c.net) + "　" + (taxType === '含稅' ? '內含營業稅 ' : '營業稅 ') + fmtN(c.tax) + "　含稅合計：NT$ " + fmtN(c.total);
+}
+function genPOPrintHTML(po, sup) {
+  const title = '訂購單';
+  const items = po.items || [];
+  const { taxType, net, tax, total } = poAmt(po);
+  const hasTax = taxType === '未稅' || taxType === '含稅';
+  const s = sup || {};
+  const rowsData = items.map((it, i) => `<td>${i + 1}</td><td>${it.spec || ''}</td><td>${it.length || ''}</td><td>${it.qty || ''}</td><td>${it.unitPrice || ''}</td><td>${it.amount ? fmtN(it.amount) : ''}</td><td>${poNote(it)}</td>`);
+  const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
+  const infoH = `<div class="info"><div><div class="ir"><span class="ib">供應商：</span><span>${po.supplier || ''}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${s.contact || ''}</span></div><div class="ir"><span class="ib">聯絡電話：</span><span>${s.phone || ''}</span></div></div><div><div class="ir"><span class="ib">訂購日期：</span><span>${toROC(po.date)}</span></div><div class="ir"><span class="ib">應匯款日期：</span><span>${po.dueDate ? toROC(po.dueDate) : ''}</span></div><div class="ir"><span class="ib">付款方式：</span><span>${po.payMethod || '轉帳'}</span></div></div></div>`;
+  const chH = `<th style="width:5%">No.</th><th style="width:27%">品名</th><th style="width:11%">規格</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:13%">金額</th><th style="width:24%">備註</th>`;
+  const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　電話：${COMPANY.tel}</div></div>`;
+  const signH = hasTax
+    ? `<tr class="tr"><td class="sign" rowspan="3" style="height:72px">確認簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td style="text-align:center">未稅金額</td><td colspan="2">NT$ ${fmtN(net)}</td></tr><tr class="tr"><td style="text-align:center">${taxType === '含稅' ? '內含營業稅 5%' : '營業稅 5%'}</td><td colspan="2">NT$ ${fmtN(tax)}</td></tr><tr class="tr"><td style="text-align:center">含稅合計</td><td colspan="2">NT$ ${fmtN(total)}</td></tr>`
+    : `<tr class="tr"><td class="sign" style="height:72px">確認簽章</td><td colspan="3" style="background:#fff"></td><td style="text-align:center">合計</td><td colspan="2">NT$ ${fmtN(total)}</td></tr>`;
+  const noteH = po.note ? `<tr><td colspan="7" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000"><strong>備註：</strong>${po.note}</td></tr>` : '';
+  const noteBigH = po.note ? `<div style="padding:8px 10px"><div style="font-size:12pt"><strong>備註：</strong>${po.note}</div></div>` : '';
+  return genPagedPrintHTML({ rowsData, hdrH, infoH, chH, ftrH, signH, noteH, noteBigH, title });
+}
+function printPODoc(po, sup) {
+  const w = window.open('', '_blank', 'width=820,height=800');
+  if (!w) return;
+  w.document.write(genPOPrintHTML(po, sup));
   w.document.close();
 }
 
@@ -5408,6 +5462,7 @@ function NewPOModal({
   const [date, setDate] = useState(today());
   const [dueDate, setDueDate] = useState('');
   const [payMethod, setPayMethod] = useState('轉帳');
+  const [taxType, setTaxType] = useState('未稅');
   const [note, setNote] = useState('');
   const [items, setItems] = useState([{
     id: uid(),
@@ -5441,7 +5496,8 @@ function NewPOModal({
     amount: 0
   }]);
   const delItem = idx => setItems(prev => prev.filter((_, i) => i !== idx));
-  const total = items.reduce((s, i) => s + (i.amount || 0), 0);
+  const calc = poCalc(items, taxType);
+  const { subtotal, tax, total } = calc;
   const handleSave = () => {
     if (!supplier.trim()) return alert('請選擇供應商');
     onSave({
@@ -5450,8 +5506,11 @@ function NewPOModal({
       date,
       dueDate,
       payMethod,
+      taxType,
       note,
       items,
+      subtotal,
+      tax,
       total
     });
   };
@@ -5474,7 +5533,7 @@ function NewPOModal({
   }, "✕")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr 1fr 1fr',
+      gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr',
       gap: 10,
       marginBottom: 12
     }
@@ -5499,7 +5558,7 @@ function NewPOModal({
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "付款方式"), /*#__PURE__*/React.createElement("select", {
     value: payMethod,
     onChange: e => setPayMethod(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", null, "轉帳"), /*#__PURE__*/React.createElement("option", null, "現金")))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("option", null, "轉帳"), /*#__PURE__*/React.createElement("option", null, "現金"))), h("div", null, h("label", null, "稅別"), poTaxSelect(taxType, setTaxType))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 8,
       fontWeight: 600
@@ -5587,7 +5646,7 @@ function NewPOModal({
       fontSize: 15,
       marginBottom: 12
     }
-  }, "合計：NT$ ", fmtN(total)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "備註"), /*#__PURE__*/React.createElement("textarea", {
+  }, poTaxSummary(calc, taxType)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "備註"), /*#__PURE__*/React.createElement("textarea", {
     value: note,
     onChange: e => setNote(e.target.value),
     rows: 2,
@@ -5619,6 +5678,7 @@ function EditPOModal({
   const [date, setDate] = useState(po.date || today());
   const [dueDate, setDueDate] = useState(po.dueDate || '');
   const [payMethod, setPayMethod] = useState(po.payMethod || '轉帳');
+  const [taxType, setTaxType] = useState(po.taxType || '無');
   const [note, setNote] = useState(po.note || '');
   const [items, setItems] = useState((po.items || []).map(it => ({ ...it, note: poNote(it), noteManual: isManualNote(it) })));
   const updItem = (idx, field, val) => {
@@ -5645,7 +5705,8 @@ function EditPOModal({
     amount: 0
   }]);
   const delItem = idx => setItems(prev => prev.filter((_, i) => i !== idx));
-  const total = items.reduce((s, i) => s + (i.amount || 0), 0);
+  const calc = poCalc(items, taxType);
+  const { subtotal, tax, total } = calc;
   const handleSave = () => {
     if (!supplier.trim()) return alert('請選擇供應商');
     onUpdate({
@@ -5654,8 +5715,11 @@ function EditPOModal({
       date,
       dueDate,
       payMethod,
+      taxType,
       note,
       items,
+      subtotal,
+      tax,
       total
     });
   };
@@ -5678,7 +5742,7 @@ function EditPOModal({
   }, "✕")), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr 1fr 1fr',
+      gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr',
       gap: 10,
       marginBottom: 12
     }
@@ -5703,7 +5767,7 @@ function EditPOModal({
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "付款方式"), /*#__PURE__*/React.createElement("select", {
     value: payMethod,
     onChange: e => setPayMethod(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", null, "轉帳"), /*#__PURE__*/React.createElement("option", null, "現金")))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("option", null, "轉帳"), /*#__PURE__*/React.createElement("option", null, "現金"))), h("div", null, h("label", null, "稅別"), poTaxSelect(taxType, setTaxType))), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 8,
       fontWeight: 600
@@ -5791,7 +5855,7 @@ function EditPOModal({
       fontSize: 15,
       marginBottom: 12
     }
-  }, "合計：NT$ ", fmtN(total)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "備註"), /*#__PURE__*/React.createElement("textarea", {
+  }, poTaxSummary(calc, taxType)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "備註"), /*#__PURE__*/React.createElement("textarea", {
     value: note,
     onChange: e => setNote(e.target.value),
     rows: 2,
@@ -5820,6 +5884,9 @@ function PurchaseView({
 }) {
   const [showNew, setShowNew] = useState(false);
   const [editPO, setEditPO] = useState(null);
+  // 明細預設收合，按 ▼ 展開
+  const [openIds, setOpenIds] = useState({});
+  const toggleOpen = id => setOpenIds(o => ({ ...o, [id]: !o[id] }));
   const [filterSupplier, setFilterSupplier] = useState('');
   const [filterPayMethod, setFilterPayMethod] = useState('');
   const [filterPaid, setFilterPaid] = useState('');
@@ -5878,13 +5945,14 @@ function PurchaseView({
   const delDItem = idx => setDraft(d => ({ ...d, items: d.items.filter((_, i) => i !== idx) }));
   const saveEdit = () => {
     if (!(draft.supplier || '').trim()) return alert('請選擇供應商');
-    const total = draft.items.reduce((s, i) => s + (i.amount || 0), 0);
-    updatePO({ ...draft, supplier: draft.supplier.trim(), total });
+    const taxType = draft.taxType || '無';
+    const { subtotal, tax, total } = poCalc(draft.items, taxType);
+    updatePO({ ...draft, supplier: draft.supplier.trim(), taxType, subtotal, tax, total });
     cancelEdit();
   };
   const renderEdit = po => {
     const d = draft;
-    const total = d.items.reduce((s, i) => s + (i.amount || 0), 0);
+    const c = poCalc(d.items, d.taxType || '無');
     const bg = { background: '#fffbe6' };
     const numIn = (it, idx, field, width, extra) => h("input", { type: "number", value: it[field], min: "0", onChange: e => updDItem(idx, field, e.target.value), style: { width }, ...extra });
     return h(React.Fragment, { key: po.id },
@@ -5897,13 +5965,15 @@ function PurchaseView({
         h("td", null, h("select", { value: d.payMethod || '轉帳', onChange: e => setD('payMethod', e.target.value) }, h("option", null, "轉帳"), h("option", null, "現金"))),
         h("td", { style: { fontSize: 12, color: '#888' } }, d.paid ? '已匯款' : '未匯款'),
         h("td", { style: { textAlign: 'center' } }, d.items.length),
-        h("td", { style: { textAlign: 'right', fontWeight: 600 } }, fmtN(total)),
+        h("td", null, poTaxSelect(d.taxType || '無', v => setD('taxType', v))),
+        h("td", { style: { textAlign: 'right' } }, fmtN(c.net)),
+        h("td", { style: { textAlign: 'right', fontWeight: 600 } }, fmtN(c.total)),
         h("td", null, h("input", { value: d.note || '', onChange: e => setD('note', e.target.value), placeholder: "備註", style: { width: 120 } })),
-        h("td", { style: { whiteSpace: 'nowrap' } },
-          h("button", { className: "btn btn-primary", style: { marginRight: 4 }, onClick: saveEdit }, "儲存"),
-          h("button", { className: "btn", onClick: cancelEdit }, "取消"))),
+        h("td", null, h("div", { style: { display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'nowrap' } },
+          h("button", { className: "btn btn-primary", onClick: saveEdit }, "儲存"),
+          h("button", { className: "btn", onClick: cancelEdit }, "取消")))),
       h("tr", { style: bg },
-        h("td", { colSpan: 9, style: { padding: '4px 16px 8px' } },
+        h("td", { colSpan: 11, style: { padding: '4px 16px 8px' } },
           h("table", { className: "po-items", style: { width: '100%', fontSize: 12, borderCollapse: 'collapse' } },
             h("thead", null, h("tr", { style: { color: '#888' } },
               ["品名", "規格", "數量", "單價", "金額", "備註", ""].map((txt, i) => h("th", { key: i, style: { textAlign: i < 2 || i === 5 ? 'left' : 'right', paddingRight: 16 } }, txt)))),
@@ -6045,7 +6115,7 @@ function PurchaseView({
     }
   }, /*#__PURE__*/React.createElement("table", {
     className: "data po-items"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "供應商"), /*#__PURE__*/React.createElement("th", null, "訂購日期"), /*#__PURE__*/React.createElement("th", null, "應匯款日期"), /*#__PURE__*/React.createElement("th", null, "付款方式"), /*#__PURE__*/React.createElement("th", null, "匯款狀態"), /*#__PURE__*/React.createElement("th", null, "項目數"), /*#__PURE__*/React.createElement("th", null, "合計（NT$）"), /*#__PURE__*/React.createElement("th", null, "備註"), /*#__PURE__*/React.createElement("th", null, "操作"))), /*#__PURE__*/React.createElement("tbody", null, filt.map(po => editId === po.id ? renderEdit(po) : /*#__PURE__*/React.createElement(React.Fragment, {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "供應商"), /*#__PURE__*/React.createElement("th", null, "訂購日期"), /*#__PURE__*/React.createElement("th", null, "應匯款日期"), /*#__PURE__*/React.createElement("th", null, "付款方式"), /*#__PURE__*/React.createElement("th", null, "匯款狀態"), /*#__PURE__*/React.createElement("th", null, "項目數"), h("th", null, "稅別"), h("th", null, "未稅金額"), h("th", null, "含稅金額"), /*#__PURE__*/React.createElement("th", null, "備註"), /*#__PURE__*/React.createElement("th", null, "操作"))), /*#__PURE__*/React.createElement("tbody", null, filt.map(po => editId === po.id ? renderEdit(po) : /*#__PURE__*/React.createElement(React.Fragment, {
     key: po.id
   }, /*#__PURE__*/React.createElement("tr", {
     style: {
@@ -6091,7 +6161,7 @@ function PurchaseView({
     style: {
       textAlign: 'center'
     }
-  }, po.items?.length || 0), /*#__PURE__*/React.createElement("td", {
+  }, po.items?.length || 0), h("td", { style: { fontSize: 12, color: '#666' } }, poAmt(po).taxType), h("td", { style: { textAlign: 'right' } }, fmtN(poAmt(po).net)), /*#__PURE__*/React.createElement("td", {
     style: {
       textAlign: 'right',
       fontWeight: 600
@@ -6101,11 +6171,21 @@ function PurchaseView({
       color: '#888',
       fontSize: 12
     }
-  }, po.note || '—'), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("button", {
-    className: "btn",
+  }, po.note || '—'), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("div", {
     style: {
-      marginRight: 4
-    },
+      display: 'flex',
+      gap: 4,
+      justifyContent: 'center',
+      flexWrap: 'nowrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    onClick: () => toggleOpen(po.id)
+  }, openIds[po.id] ? '▲' : '▼'), /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    onClick: () => printPODoc(po, supplierList.find(s => s.name === po.supplier))
+  }, "🖨 列印"), /*#__PURE__*/React.createElement("button", {
+    className: "btn",
     onClick: () => startEdit(po)
   }, "編輯"), /*#__PURE__*/React.createElement("button", {
     className: "btn",
@@ -6113,12 +6193,12 @@ function PurchaseView({
       color: '#c00'
     },
     onClick: () => delPO(po.id)
-  }, "刪除"))), po.items?.length > 0 && /*#__PURE__*/React.createElement("tr", {
+  }, "刪除")))), po.items?.length > 0 && openIds[po.id] && /*#__PURE__*/React.createElement("tr", {
     style: {
       background: '#f8f9fa'
     }
   }, /*#__PURE__*/React.createElement("td", {
-    colSpan: 9,
+    colSpan: 11,
     style: {
       padding: '4px 16px 8px'
     }
@@ -6810,6 +6890,9 @@ function QuoteView({
 }) {
   const [showNew, setShowNew] = useState(false);
   const [editQuote, setEditQuote] = useState(null);
+  // 明細預設收合，按 ▼ 展開
+  const [openIds, setOpenIds] = useState({});
+  const toggleOpen = id => setOpenIds(o => ({ ...o, [id]: !o[id] }));
   const [filterCust, setFilterCust] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterYear, setFilterYear] = useState(toROCM(today()).split('-')[0]);
@@ -6878,12 +6961,13 @@ function QuoteView({
                 h("td", { style: { textAlign: 'right', fontWeight: 600 } }, fmtN(q.total || 0)),
                 h("td", { style: { color: '#888', fontSize: 12 } }, q.note || '—'),
                 h("td", null,
+                  h("button", { className: "btn btn-sm", style: { marginRight: 4 }, onClick: () => toggleOpen(q.id) }, openIds[q.id] ? '▲' : '▼'),
                   h("button", { className: "btn btn-sm", style: { marginRight: 4 }, onClick: () => setEditQuote(q) }, "編輯"),
                   h("button", { className: "btn btn-sm", style: { marginRight: 4 }, onClick: () => printQuoteDoc(q, customers.find(c => c.id === q.customerId) || {}) }, "🖨 列印"),
                   h("button", { className: "btn btn-danger btn-sm", onClick: () => delQuote(q.id) }, "刪除")
                 )
               ),
-              q.items?.length > 0 && h("tr", { style: { background: '#f8f9fa' } },
+              q.items?.length > 0 && openIds[q.id] && h("tr", { style: { background: '#f8f9fa' } },
                 h("td", { colSpan: 9, style: { padding: '4px 16px 8px' } },
                   h("table", { style: { width: '100%', fontSize: 12, borderCollapse: 'collapse' } },
                     h("thead", null, h("tr", { style: { color: '#888' } }, ["產品規格", "顏色", "尺寸(CM)", "數量", "單價", "金額"].map(t => h("th", { key: t, style: { textAlign: t === '產品規格' ? 'left' : 'right', paddingRight: 16 } }, t)))),
