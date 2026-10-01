@@ -3764,6 +3764,20 @@ const isManualNote = it => {
   return n.replace(/^共\s*([\d.]+)\s*支$/, '$1支') !== poPiecesNote(it) && n !== withPieces(it);
 };
 const poNote = it => isManualNote(it) ? it.note || '' : withPieces(it);
+// 備註打「N支」→ 數量 = N × 規格（回推數量並重算金額）
+const qtyFromNote = it => {
+  const m = String(it.note || '').match(/([\d.]+)\s*支/);
+  const len = parseFloat(it.length);
+  const pcs = m ? parseFloat(m[1]) : 0;
+  if (!pcs || !len) return it;
+  const qty = Math.round(pcs * len * 100) / 100;
+  return { ...it, qty, amount: Math.round(qty * (it.unitPrice || 0)), noteManual: false };
+};
+// 訂購單總支數（從備註的「N支」加總）
+const poPieces = items => (items || []).reduce((s, it) => {
+  const m = poNote(it).match(/([\d.]+)\s*支/);
+  return s + (m ? parseFloat(m[1]) : 0);
+}, 0);
 const getUP = (prices, name, prod) => {
   const cat = PCAT[prod];
   return (prices[name] || STD)[cat] || STD[cat] || 0;
@@ -3971,6 +3985,10 @@ function genLPrintSvg(dir, a, b, scale) {
 }
 
 /* ===== PRINT HTML GENERATOR ===== */
+// 總數量（支）：不計運費、人工費、L角配件
+function sumQty(items) {
+  return (items || []).reduce((s, it) => ['運費', '人工費', 'L角配件'].includes(it.product || it.spec) ? s : s + (Number(it.qty) || 0), 0);
+}
 function genPrintHTML(order, cust, showPrices) {
   const roc = toROC(order.date);
   const rocM = toROCM(order.date);
@@ -3982,6 +4000,7 @@ function genPrintHTML(order, cust, showPrices) {
   const oNet = total - oTax;
   const oTaxLbl = order.taxType === '含稅' ? '內含營業稅 5%' : order.taxType === '未稅' ? '營業稅 5%' : '稅額';
   const cols = showPrices ? 9 : 8;
+  const totalQty = sumQty(items);
 
   // 建立每列資料的 TD 內容陣列
   const rowsData = [];
@@ -4000,7 +4019,7 @@ function genPrintHTML(order, cust, showPrices) {
   const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div>${showPrices ? `<div class="ir"><span class="ib">對帳月份：</span><span>${rocM}</span></div>` : `<div class="ir"><span class="ib">銷貨單號：</span><span>${order.orderNumber}</span></div>`}<div class="ir"><span class="ib">日期：</span><span>${showPrices ? rocM : roc}</span></div></div></div>`;
   const chH = `<th style="width:4%">No.</th>${showPrices ? '<th style="width:8%">訂購日期</th>' : ''}<th style="${showPrices ? 'width:20%' : 'width:28%'}">產品</th><th style="width:9%">顏色</th><th style="width:9%">規格</th><th style="width:9%">數量</th><th style="width:10%">單價</th><th style="width:12%">金額</th><th style="width:19%">備註</th>`;
   const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　Line ID：${COMPANY.line}</div></div>`;
-  const signH = showPrices ? `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="4" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${fmtN(hasTax ? oNet : total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">${oTaxLbl}</td><td colspan="2">${fmtN(oTax)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2">${fmtN(total)}</td></tr>` : `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>`;
+  const signH = showPrices ? `<tr class="tr"><td colspan="5" style="text-align:right;padding-right:8px">總數量</td><td>${fmtN(totalQty)} 支</td><td colspan="3"></td></tr><tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="4" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2">${fmtN(hasTax ? oNet : total)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">${oTaxLbl}</td><td colspan="2">${fmtN(oTax)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2">${fmtN(total)}</td></tr>` : `<tr class="tr"><td colspan="4" style="text-align:right;padding-right:8px">總數量</td><td>${fmtN(totalQty)} 支</td><td colspan="3"></td></tr><tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center">合計</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td colspan="2"></td></tr><tr class="tr"><td colspan="2" style="text-align:center">總計</td><td colspan="2"></td></tr>`;
   const lItems = items.filter(it => it.product && it.product.includes('L型') && it.lDir);
   const lDiagH = lItems.length ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:18px">' + lItems.map(it => '<div style="text-align:center"><div style="font-size:10pt;font-weight:bold;margin-bottom:2px">#' + it.no + ' ' + it.product + (it.color ? ' ' + it.color : '') + '</div><div style="font-size:10pt;color:#555;margin-bottom:3px">開口：' + (it.lDir || '') + '</div>' + genLPrintSvg(it.lDir, it.lSideA, it.lSideB, 2.2) + '</div>').join('') + '</div>' : '';
   // 表格內備註列（放得下就跟資料一起印在同一頁）
@@ -4208,9 +4227,10 @@ function genPOPrintHTML(po, sup) {
   const signH = hasTax
     ? `<tr class="tr"><td class="sign" rowspan="3" style="height:72px">確認簽章</td><td colspan="3" rowspan="3" style="background:#fff"></td><td style="text-align:center">未稅金額</td><td colspan="2">NT$ ${fmtN(net)}</td></tr><tr class="tr"><td style="text-align:center">${taxType === '含稅' ? '內含營業稅 5%' : '營業稅 5%'}</td><td colspan="2">NT$ ${fmtN(tax)}</td></tr><tr class="tr"><td style="text-align:center">含稅合計</td><td colspan="2">NT$ ${fmtN(total)}</td></tr>`
     : `<tr class="tr"><td class="sign" style="height:72px">確認簽章</td><td colspan="3" style="background:#fff"></td><td style="text-align:center">合計</td><td colspan="2">NT$ ${fmtN(total)}</td></tr>`;
+  const qtyH = `<tr class="tr"><td colspan="3" style="text-align:right;padding-right:8px">總數量</td><td>${fmtN(sumQty(items))}</td><td colspan="2"></td><td>共 ${fmtN(Math.round(poPieces(items) * 100) / 100)} 支</td></tr>`;
   const noteH = po.note ? `<tr><td colspan="7" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000"><strong>備註：</strong>${po.note}</td></tr>` : '';
   const noteBigH = po.note ? `<div style="padding:8px 10px"><div style="font-size:12pt"><strong>備註：</strong>${po.note}</div></div>` : '';
-  return genPagedPrintHTML({ rowsData, hdrH, infoH, chH, ftrH, signH, noteH, noteBigH, title });
+  return genPagedPrintHTML({ rowsData, hdrH, infoH, chH, ftrH, signH: qtyH + signH, noteH, noteBigH, title });
 }
 function printPODoc(po, sup) {
   const w = window.open('', '_blank', 'width=820,height=800');
@@ -5482,6 +5502,7 @@ function NewPOModal({
       };
       if (field !== 'amount') updated.amount = Math.round((updated.qty || 0) * (updated.unitPrice || 0));
       if (field === 'note') updated.noteManual = String(val).trim() !== '';
+      if (field === 'note') Object.assign(updated, qtyFromNote(updated));
       if ((field === 'qty' || field === 'length') && !isManualNote(arr[idx])) updated.note = withPieces(updated);
       arr[idx] = updated;
       return arr;
@@ -5691,6 +5712,7 @@ function EditPOModal({
       };
       if (field !== 'amount') updated.amount = Math.round((updated.qty || 0) * (updated.unitPrice || 0));
       if (field === 'note') updated.noteManual = String(val).trim() !== '';
+      if (field === 'note') Object.assign(updated, qtyFromNote(updated));
       if ((field === 'qty' || field === 'length') && !isManualNote(arr[idx])) updated.note = withPieces(updated);
       arr[idx] = updated;
       return arr;
@@ -5933,6 +5955,7 @@ function PurchaseView({
     const u = { ...items[idx], [field]: ['qty', 'unitPrice', 'amount'].includes(field) ? Number(val) || 0 : val };
     if (field !== 'amount') u.amount = Math.round((u.qty || 0) * (u.unitPrice || 0));
     if (field === 'note') u.noteManual = String(val).trim() !== '';
+    if (field === 'note') Object.assign(u, qtyFromNote(u));
     if ((field === 'qty' || field === 'length') && !isManualNote(items[idx])) u.note = withPieces(u);
     items[idx] = u;
     return { ...d, items };
@@ -7035,10 +7058,11 @@ function genMultiStmtHTML(entries) {
       }
       flatRows.push({
         type: 'sub',
-        html: `<tr class="tr"><td colspan="7" style="text-align:right;font-weight:700">本月合計</td><td style="font-weight:700;font-size:11pt;text-align:right">${fmtN(md.total)}</td><td></td></tr>`
+        html: `<tr class="tr"><td colspan="5" style="text-align:right;font-weight:700">本月合計</td><td style="font-weight:700">${fmtN(sumQty(md.items))} 支</td><td></td><td style="font-weight:700;font-size:11pt;text-align:right">${fmtN(md.total)}</td><td></td></tr>`
       });
     });
-    const grandH = `<tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="5" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center;font-weight:700">總計</td><td style="font-weight:700;text-align:right">${fmtN(grandTotal)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td></td></tr><tr class="tr"><td colspan="2" style="text-align:center">實付</td><td></td></tr>`;
+    const grandQty = monthsData.reduce((s, m) => s + sumQty(m.items), 0);
+    const grandH = `<tr class="tr"><td colspan="5" style="text-align:right;padding-right:8px;font-weight:700">總數量</td><td style="font-weight:700">${fmtN(grandQty)} 支</td><td colspan="3"></td></tr><tr class="tr"><td class="sign" rowspan="3" style="height:30px">客戶簽章</td><td colspan="5" rowspan="3" style="background:#fff"></td><td colspan="2" style="text-align:center;font-weight:700">總計</td><td style="font-weight:700;text-align:right">${fmtN(grandTotal)}</td></tr><tr class="tr"><td colspan="2" style="text-align:center">稅額</td><td></td></tr><tr class="tr"><td colspan="2" style="text-align:center">實付</td><td></td></tr>`;
     const infoH = `<div class="info"><div><div class="ir"><span class="ib">客戶名稱：</span><span>${cust.name}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${cust.contact}</span></div><div class="ir"><span class="ib">送貨地址：</span><span style="word-break:break-all">${cust.address}</span></div></div><div><div class="ir"><span class="ib">聯絡電話：</span><span>${cust.phone}</span></div><div class="ir"><span class="ib">對帳期間：</span><span>${dateRange}</span></div></div></div>`;
     return {
       r: flatRows.map(r => r.html),
