@@ -78,6 +78,22 @@ table.data tr:hover td{background:#f8fafd}
 /* 表格全部置中（訂購單、銷貨單、報價單列表） */
 .po-items th, .po-items td, .tbl-center th, .tbl-center td { text-align: center !important; }
 .po-items input, .tbl-center input { text-align: center; }
+/* 所有列表的標題列放大 */
+table.data th{font-size:15px;padding:11px 10px;font-weight:600}
+.items-table th{font-size:13px;padding:8px}
+/* 塑膠粒訂購單：綠色系，和門檻業務（深藍）區分 */
+.resin-theme table.data th{background:#12705f}
+.resin-theme .stat-card{border-top:4px solid #12705f}
+.resin-theme .stat-val{color:#12705f}
+.resin-theme .btn-primary{background:#12705f;border-color:#12705f}
+.resin-theme .btn-primary:hover{background:#0e5a4c}
+.resin-theme .modal-title{color:#12705f}
+.nav-tab.resin-tab{color:#12705f}
+.resin-theme table.data td{padding:10px 14px}
+.resin-theme table.data th{padding:9px 14px}
+.resin-theme table.data th:last-child,.resin-theme table.data td:last-child{text-align:right!important;white-space:nowrap;width:1%}
+.resin-theme .resin-ops{display:flex;gap:6px;justify-content:flex-end;flex-wrap:nowrap}
+.nav-tab.resin-tab.active{background:#12705f;color:#fff;border-color:#12705f}
 </style>
 </head>
 <body>
@@ -3934,7 +3950,7 @@ const DB = {
     });
   },
   exportAll: () => {
-    const keys = ['yl-orders-v4','yl-customers-v4','yl-prices-v2','yl-costs','yl-products','yl-purchases','yl-receivables','yl-manual-rec','yl-colors','yl-color-surcharge','yl-suppliers','yl-quotes'];
+    const keys = ['yl-orders-v4','yl-customers-v4','yl-prices-v2','yl-costs','yl-products','yl-purchases','yl-receivables','yl-manual-rec','yl-colors','yl-color-surcharge','yl-suppliers','yl-quotes','yl-resin','yl-resin-sup','yl-resin-cust'];
     const backup = { exportedAt: new Date().toISOString(), version: 1, data: {} };
     keys.forEach(k => { const v = localStorage.getItem('ylbk_' + k); if (v) try { backup.data[k] = JSON.parse(v); } catch(_) {} });
     if (!Object.keys(backup.data).length) { alert('本機尚無快取資料，請先正常開啟一次 app 讓資料載入後再匯出。'); return; }
@@ -4029,7 +4045,7 @@ function genPrintHTML(order, cust, showPrices) {
   return genPagedPrintHTML({ rowsData, hdrH, infoH, chH, ftrH, signH, noteH, noteBigH, title });
 }
 // 共用的分頁列印版型（銷貨單／請款單／訂購單）
-function genPagedPrintHTML({ rowsData, hdrH, infoH, chH, ftrH, signH, noteH, noteBigH, title }) {
+function genPagedPrintHTML({ rowsData, hdrH, infoH, chH, ftrH, signH, noteH, noteBigH, title, extraCss = '' }) {
   const measRows = rowsData.map(tds => `<tr class="dr">${tds}</tr>`).join('');
   // 安全地嵌入 JSON，將 / 替換為 \/ 防止字串中出現 script 結束標籤
   const D = JSON.stringify({
@@ -4064,7 +4080,7 @@ tr.dr:nth-child(even) td{background:#eef1f6}
 .tr td{font-weight:700;font-size:11pt}
 .sign{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;vertical-align:middle;font-size:11pt;padding:2px 1px;white-space:nowrap}
 .footer{padding:2px 8px;font-size:11pt;border-top:1px solid #000}
-@media print{#meas{display:none}tr.dr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}`;
+@media print{#meas{display:none}tr.dr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}${extraCss}`;
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
 <style>${css}</style></head><body>
 <div id="meas">
@@ -6319,6 +6335,287 @@ function PurchaseView({
 }
 
 /* ===== NEW QUOTE MODAL ===== */
+/* ===== 塑膠粒訂購單 ===== */
+const resinKg = items => (items || []).reduce((s, it) => s + (Number(it.kg) || 0), 0);
+// 塑膠粒業務專用的供應商／客戶資料（和門檻業務的資料分開）
+const RESIN_SUP_COLS = [['name', '供應商名稱', 160], ['contact', '聯絡人', 90], ['tel', '電話', 120], ['mobile', '手機', 120], ['address', '地址', 220], ['note', '備註', 140]];
+const RESIN_CUST_COLS = [['company', '公司名稱', 170], ['custNo', '客戶編號', 90], ['taxId', '統一編號', 100], ['name', '姓名', 90], ['tel', '公司電話', 120], ['mobile', '手機電話', 120], ['address', '公司地址', 240], ['note', '備註', 140]];
+// 依名稱新增或更新：已存在就用這次有填的欄位覆蓋，沒填的保留原資料
+const upsertContact = (list, keyField, rec) => {
+  const key = (rec[keyField] || '').trim();
+  if (!key) return list;
+  const i = list.findIndex(x => (x[keyField] || '').trim() === key);
+  if (i < 0) return [...list, { id: uid(), ...rec, [keyField]: key }];
+  const cur = list[i];
+  const merged = { ...cur };
+  Object.keys(rec).forEach(k => { if (String(rec[k] || '').trim()) merged[k] = rec[k]; });
+  if (JSON.stringify(merged) === JSON.stringify(cur)) return list;
+  return list.map((x, j) => j === i ? merged : x);
+};
+const resinSupRec = r => ({ name: r.supplier || '' });
+const resinCustRec = r => ({ company: r.shipCompany || '', name: r.shipName || '', tel: r.shipTel || '', mobile: r.shipMobile || '', address: r.shipAddress || '' });
+function ResinContactTable({ title, cols, list, onChange, countOf }) {
+  const [editId, setEditId] = useState(null);
+  const [draft, setDraft] = useState({});
+  const [q, setQ] = useState('');
+  const keyField = cols[0][0];
+  const start = row => { setEditId(row.id); setDraft({ ...row }); };
+  const add = () => { const row = { id: uid() }; setEditId(row.id); setDraft(row); };
+  const cancel = () => { setEditId(null); setDraft({}); };
+  const save = () => {
+    const key = (draft[keyField] || '').trim();
+    if (!key) return alert('請填寫' + cols[0][1]);
+    if (list.some(x => x.id !== draft.id && (x[keyField] || '').trim() === key)) return alert(cols[0][1] + '「' + key + '」已經存在');
+    const row = { ...draft, [keyField]: key };
+    onChange(list.some(x => x.id === row.id) ? list.map(x => x.id === row.id ? row : x) : [...list, row]);
+    cancel();
+  };
+  const del = row => {
+    if (!confirm('確定刪除「' + (row[keyField] || '') + '」？')) return;
+    onChange(list.filter(x => x.id !== row.id));
+  };
+  const isNew = editId && !list.some(x => x.id === editId);
+  const shown = list.filter(x => !q || cols.some(([f]) => String(x[f] || '').includes(q))).sort((a, b) => (a[keyField] || '').localeCompare(b[keyField] || '', 'zh-Hant'));
+  const editRow = h("tr", { key: editId, style: { background: '#fffbe6' } },
+    cols.map(([f, , w]) => h("td", { key: f }, h("input", { value: draft[f] || '', onChange: e => setDraft(d => ({ ...d, [f]: e.target.value })), style: { width: w } }))),
+    h("td", null, countOf ? countOf(draft) : ''),
+    h("td", null, h("div", { className: "resin-ops" },
+      h("button", { className: "btn btn-primary", onClick: save }, "儲存"),
+      h("button", { className: "btn", onClick: cancel }, "取消"))));
+  return h("div", { className: "card" },
+    h("div", { style: { display: 'flex', gap: 10, marginBottom: 12, alignItems: 'flex-end', flexWrap: 'wrap' } },
+      h("div", { style: { fontWeight: 700, fontSize: 15 } }, title),
+      h("input", { value: q, onChange: e => setQ(e.target.value), placeholder: "🔍 搜尋", style: { width: 160 } }),
+      h("button", { className: "btn btn-primary", onClick: add, disabled: !!editId }, "＋ 新增"),
+      h("div", { style: { marginLeft: 'auto', fontSize: 12, color: '#999' } }, "共 ", list.length, " 筆　💡 儲存訂購單時會自動新增／更新")),
+    h("div", { style: { overflowX: 'auto' } }, h("table", { className: "data tbl-center" },
+      h("thead", null, h("tr", null, [...cols.map(c => c[1]), "訂購單數", "操作"].map(t => h("th", { key: t }, t)))),
+      h("tbody", null,
+        isNew && editRow,
+        shown.map(row => row.id === editId ? editRow : h("tr", { key: row.id },
+          cols.map(([f]) => h("td", { key: f, style: f === 'address' || f === 'note' ? { textAlign: 'left', fontSize: 12 } : null }, row[f] || '—')),
+          h("td", null, countOf ? countOf(row) : ''),
+          h("td", null, h("div", { className: "resin-ops" },
+            h("button", { className: "btn", onClick: () => start(row), disabled: !!editId }, "編輯"),
+            h("button", { className: "btn", style: { color: '#c00' }, onClick: () => del(row) }, "刪除"))))),
+        !list.length && !isNew && h("tr", null, h("td", { colSpan: cols.length + 2, style: { color: '#999', padding: 20 } }, "尚無資料"))))));
+}
+const newResinItem = last => ({ id: uid(), product: last ? last.product || '' : '', color: '', colorNo: '', kg: '' });
+function genResinPrintHTML(r, sup) {
+  const title = '塑膠粒訂購單';
+  const s = sup || {};
+  const items = r.items || [];
+  const rowsData = items.map((it, i) => `<td>${i + 1}</td><td>${it.product || ''}</td><td>${it.color || ''}</td><td>${it.colorNo || ''}</td><td>${it.kg ? fmtN(Number(it.kg)) + ' 公斤' : ''}</td>`);
+  const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
+  const infoH = `<div class="info"><div><div class="ir"><span class="ib">供應商：</span><span>${r.supplier || ''}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${s.contact || ''}</span></div><div class="ir"><span class="ib">聯絡電話：</span><span>${[s.tel, s.mobile].filter(Boolean).join(' / ')}</span></div></div><div><div class="ir"><span class="ib">訂購日期：</span><span>${r.date ? toROC(r.date) : ''}</span></div><div class="ir"><span class="ib">入廠時間：</span><span>${r.arrivalDate ? toROC(r.arrivalDate) : ''}</span></div></div></div>`;
+  const chH = `<th style="width:4%">No.</th><th style="width:28%">訂購品項</th><th style="width:16%">顏色</th><th style="width:16%">色號</th><th style="width:36%">公斤數</th>`;
+  const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　電話：${COMPANY.tel}</div></div>`;
+  const L = 'text-align:center;width:15%';
+  const V = 'text-align:left;padding-left:6px;font-weight:400';
+  // 送貨資訊用獨立的內嵌表格，欄寬不受上面品項欄位影響
+  const shipH = `<table style="width:100%;border-collapse:collapse;border-style:hidden">`
+    + `<tr class="tr"><td style="${L}">公司名稱</td><td colspan="3" style="${V}">${r.shipCompany || ''}</td></tr>`
+    + `<tr class="tr"><td style="${L}">公司地址</td><td style="${V};width:45%">${r.shipAddress || ''}</td><td style="${L}">公司電話</td><td style="${V}">${r.shipTel || ''}</td></tr>`
+    + `<tr class="tr"><td style="${L}">姓名</td><td style="${V};width:45%">${r.shipName || ''}</td><td style="${L}">手機電話</td><td style="${V}">${r.shipMobile || ''}</td></tr>`
+    + `</table>`;
+  const signH = `<tr class="tr"><td colspan="4" style="text-align:right;padding-right:8px">總公斤數</td><td>${fmtN(resinKg(items))} 公斤</td></tr>`
+    + `<tr class="tr"><td colspan="5" style="text-align:left;padding-left:6px">送貨資訊</td></tr>`
+    + `<tr><td colspan="5" style="padding:0">${shipH}</td></tr>`;
+  const noteH = r.note ? `<tr><td colspan="5" style="text-align:left;padding:3px 6px;font-size:11pt;border:1px solid #000"><strong>備註：</strong>${r.note}</td></tr>` : '';
+  const noteBigH = r.note ? `<div style="padding:8px 10px"><div style="font-size:12pt"><strong>備註：</strong>${r.note}</div></div>` : '';
+  // 塑膠粒訂購單字體放大
+  const extraCss = 'th,td,.tr td{font-size:14pt !important;padding:4px 5px}.info{font-size:14pt}.ttl{font-size:18pt}.footer{font-size:12pt}';
+  return genPagedPrintHTML({ rowsData, hdrH, infoH, chH, ftrH, signH, noteH, noteBigH, title, extraCss });
+}
+function printResinDoc(r, sup) {
+  const w = window.open('', '_blank', 'width=820,height=800');
+  if (!w) return;
+  w.document.write(genResinPrintHTML(r, sup));
+  w.document.close();
+}
+// 出貨單（給供應商送貨時讓客戶回簽）：A4 上半張，跳出預覽視窗可選印表機或另存 PDF
+function genResinShipHTML(r, cust) {
+  // 版型比照銷貨單：外框、公司抬頭、資訊欄、格線表格、簽收欄、頁尾公司地址電話
+  const c = cust || {};
+  const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const d = r.arrivalDate || r.date || '';
+  const items = r.items || [];
+  const B = 'border:1px solid #000;padding:4px 5px;text-align:center;vertical-align:middle';
+  const ib = 'font-weight:700;white-space:nowrap;min-width:84px;display:inline-block';
+  const ir = (l, v) => `<div style="margin-bottom:3px"><span style="${ib}">${l}：</span><span>${esc(v)}</span></div>`;
+  const rows = items.map((it, k) => `<tr><td style="${B}">${k + 1}</td><td style="${B}">${esc([it.product, it.color].filter(Boolean).join(' '))}</td><td style="${B}">${it.kg ? fmtN(Number(it.kg)) : ''}</td><td style="${B}">KG</td><td style="${B}">${it.colorNo ? '色號 ' + esc(it.colorNo) : ''}</td></tr>`);
+  // 品項後面只多留一列空白
+  rows.push(`<tr><td style="${B};height:30px"></td><td style="${B}"></td><td style="${B}"></td><td style="${B}"></td><td style="${B}"></td></tr>`);
+  const total = items.reduce((t, it) => t + (Number(it.kg) || 0), 0);
+  const signHt = 80;
+  return `<div style="width:210mm;max-height:148mm;padding:5mm;box-sizing:border-box;background:#fff">
+<div style="border:2px solid #000;display:flex;flex-direction:column;font-family:'Microsoft JhengHei','PingFang TC',sans-serif;color:#000;font-size:14pt">
+  <div style="text-align:center;padding:5px 8px 0"><div style="font-size:22pt;font-weight:700;letter-spacing:2px">${COMPANY.name}</div><div style="font-size:8pt;letter-spacing:1px">${COMPANY.nameEn}</div></div>
+  <div style="text-align:center;font-size:18pt;font-weight:700;padding:2px 8px 4px">出貨單</div>
+  <div style="display:grid;grid-template-columns:1.2fr 1fr;padding:0 10px 4px;border-bottom:1px solid #000">
+    <div>${ir('客戶', r.shipCompany || c.company)}${ir('電話', r.shipTel || r.shipMobile || c.tel)}${ir('地址', r.shipAddress || c.address)}</div>
+    <div>${ir('客戶編號', c.custNo)}${ir('統一編號', c.taxId)}${ir('出貨日期', d ? toROC(d) : '')}</div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:14pt">
+    <thead><tr><th style="${B};width:7%">No.</th><th style="${B};width:38%">品名</th><th style="${B};width:17%">數量</th><th style="${B};width:11%">單位</th><th style="${B};width:27%">備註</th></tr></thead>
+    <tbody>${rows.join('')}
+      <tr><td colspan="2" style="${B};text-align:right;padding-right:10px;font-weight:700">合計</td><td style="${B};font-weight:700">${fmtN(total)}</td><td style="${B};font-weight:700">KG</td><td style="${B}"></td></tr>
+      <tr><td colspan="5" style="${B};height:${signHt}px;text-align:left;vertical-align:top;font-weight:700"><div style="display:flex"><div style="width:45%">客戶簽收</div><div style="width:28%">倉庫</div><div style="width:27%">填表</div></div></td></tr>
+    </tbody>
+  </table>
+  <div style="padding:3px 10px;font-size:11pt">公司地址：${COMPANY.addr}　　電話：${COMPANY.tel}</div>
+</div></div>`;
+}
+function printResinShip(r, cust) {
+  const w = window.open('', '_blank', 'width=820,height=800');
+  if (!w) return;
+  const d = (r.arrivalDate || r.date || today()).replace(/-/g, '');
+  const title = `出貨單_${(r.shipCompany || '客戶').replace(/[\/:*?"<>|]/g, '')}_${d}`;
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title><style>@page{size:A4 portrait;margin:0}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0}</style></head><body>${genResinShipHTML(r, cust)}<script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script></body></html>`);
+  w.document.close();
+}
+function ResinModal({ initial, resins, resinSup = [], resinCust = [], onSave, onClose }) {
+  const [d, setDraft] = useState(() => initial ? { ...initial, items: (initial.items || []).map(it => ({ ...it, id: it.id || uid() })) } : {
+    id: uid(), supplier: '', date: today(), arrivalDate: '', items: [newResinItem()], shipCompany: '', shipAddress: '', shipName: '', shipTel: '', shipMobile: '', note: ''
+  });
+  const set = (f, v) => setDraft(x => ({ ...x, [f]: v }));
+  const updItem = (idx, f, v) => setDraft(x => ({ ...x, items: x.items.map((it, i) => i === idx ? { ...it, [f]: v } : it) }));
+  const addItem = () => setDraft(x => ({ ...x, items: [...x.items, newResinItem(x.items[x.items.length - 1])] }));
+  const delItem = idx => setDraft(x => ({ ...x, items: x.items.filter((_, i) => i !== idx) }));
+  // 送貨公司：選客戶資料裡的公司，自動帶入地址、姓名、電話
+  const setCompany = v => setDraft(x => {
+    const c = resinCust.find(c => c.company === v);
+    if (!c) return { ...x, shipCompany: v };
+    return { ...x, shipCompany: v, shipAddress: c.address || '', shipName: c.name || '', shipTel: c.tel || '', shipMobile: c.mobile || '' };
+  });
+  const pastProducts = [...new Set(resins.flatMap(r => (r.items || []).map(it => it.product)).filter(Boolean))];
+  const handleSave = () => {
+    const items = d.items.filter(it => (it.product || '').trim() || it.color || it.colorNo || it.kg);
+    if (!items.length) return alert('請至少填寫一個訂購品項');
+    onSave({ ...d, items: items.map(it => ({ ...it, kg: Number(it.kg) || 0 })) });
+  };
+  const lbl = (t, el) => h("div", null, h("label", null, t), el);
+  return h("div", { className: "modal-overlay", onClick: onClose },
+    h("div", { className: "modal", style: { maxWidth: 820 }, onClick: e => e.stopPropagation() },
+      h("div", { className: "modal-header" },
+        h("div", { className: "modal-title" }, initial ? "✏️ 編輯塑膠粒訂購單" : "🧪 新增塑膠粒訂購單"),
+        h("button", { className: "btn", onClick: onClose }, "✕")),
+      h("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10, marginBottom: 12 } },
+        lbl("訂購日期", h("input", { type: "date", value: d.date || '', onChange: e => set('date', e.target.value) })),
+        lbl("入廠時間", h("input", { type: "date", value: d.arrivalDate || '', onChange: e => set('arrivalDate', e.target.value) })),
+        lbl("供應商", h(React.Fragment, null,
+          h("input", { list: "resin-supplier-list", value: d.supplier || '', onChange: e => set('supplier', e.target.value) }),
+          h("datalist", { id: "resin-supplier-list" }, resinSup.map(s => h("option", { key: s.id, value: s.name })))))),
+      h("div", { style: { fontWeight: 600, margin: '8px 0 4px' } }, "訂購品項"),
+      h("datalist", { id: "resin-product-list" }, pastProducts.map(p => h("option", { key: p, value: p }))),
+      h("table", { style: { width: '100%', fontSize: 13 } },
+        h("thead", null, h("tr", null, ["訂購品項", "顏色", "色號", "公斤數", ""].map((t, i) => h("th", { key: i }, t)))),
+        h("tbody", null, d.items.map((it, idx) => h("tr", { key: it.id },
+          h("td", null, h("input", { list: "resin-product-list", value: it.product || '', onChange: e => updItem(idx, 'product', e.target.value), placeholder: "例：ABS", style: { width: '100%' } })),
+          h("td", null, h("input", { value: it.color || '', onChange: e => updItem(idx, 'color', e.target.value), placeholder: "例：白色", style: { width: '100%' } })),
+          h("td", null, h("input", { value: it.colorNo || '', onChange: e => updItem(idx, 'colorNo', e.target.value), placeholder: "例：90534", style: { width: '100%' } })),
+          h("td", null, h("input", { type: "number", min: "0", value: it.kg, onChange: e => updItem(idx, 'kg', e.target.value), placeholder: "公斤", style: { width: '100%' } })),
+          h("td", null, d.items.length > 1 && h("button", { className: "btn", style: { color: '#c00', padding: '2px 8px' }, onClick: () => delItem(idx) }, "✕")))))),
+      h("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 } },
+        h("button", { className: "btn btn-sm", onClick: addItem }, "＋ 新增品項"),
+        h("div", { style: { fontSize: 13 } }, "總公斤數：", h("span", { style: { color: '#c9a84c', fontWeight: 700 } }, fmtN(resinKg(d.items))), " 公斤")),
+      h("div", { style: { fontWeight: 600, margin: '14px 0 4px' } }, "送貨資訊"),
+      h("datalist", { id: "resin-ship-list" }, resinCust.map(c => h("option", { key: c.id, value: c.company }))),
+      h("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10 } },
+        lbl("公司名稱", h("input", { list: "resin-ship-list", value: d.shipCompany || '', onChange: e => setCompany(e.target.value) })),
+        lbl("姓名", h("input", { value: d.shipName || '', onChange: e => set('shipName', e.target.value) })),
+        h("div", { style: { gridColumn: '1 / -1' } }, h("label", null, "公司地址"), h("input", { value: d.shipAddress || '', onChange: e => set('shipAddress', e.target.value), style: { width: '100%' } })),
+        lbl("公司電話", h("input", { value: d.shipTel || '', onChange: e => set('shipTel', e.target.value) })),
+        lbl("手機電話", h("input", { value: d.shipMobile || '', onChange: e => set('shipMobile', e.target.value) }))),
+      h("div", { style: { marginTop: 12 } }, h("label", null, "備註"), h("input", { value: d.note || '', onChange: e => set('note', e.target.value), style: { width: '100%' } })),
+      h("div", { style: { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 } },
+        h("button", { className: "btn", onClick: onClose }, "取消"),
+        h("button", { className: "btn btn-primary", onClick: handleSave }, "💾 儲存"))));
+}
+function ResinView({ resins, setResins, resinSup, setResinSup, resinCust, setResinCust }) {
+  const [sub, setSub] = useState('orders');
+  const [modal, setModal] = useState(null); // null | 'new' | 訂購單物件
+  const saveSup = u => { setResinSup(u); DB.save('yl-resin-sup', u); };
+  const saveCust = u => { setResinCust(u); DB.save('yl-resin-cust', u); };
+  // 舊的訂購單資料第一次進來時，自動整理成供應商／客戶資料
+  useEffect(() => {
+    if (!resins.length || resinSup.length || resinCust.length) return;
+    if (!DB._loaded.has('yl-resin-sup') || !DB._loaded.has('yl-resin-cust')) return;
+    const sorted = [...resins].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    let su = [], cu = [];
+    sorted.forEach(r => { su = upsertContact(su, 'name', resinSupRec(r)); cu = upsertContact(cu, 'company', resinCustRec(r)); });
+    if (su.length) saveSup(su);
+    if (cu.length) saveCust(cu);
+  }, []);
+  const [filterYear, setFilterYear] = useState(toROCM(today()).split('-')[0]);
+  const [filterMonth, setFilterMonth] = useState('');
+  const save = r => {
+    const exists = resins.some(x => x.id === r.id);
+    const u = exists ? resins.map(x => x.id === r.id ? r : x) : [r, ...resins];
+    setResins(u);
+    DB.save('yl-resin', u);
+    const su = upsertContact(resinSup, 'name', resinSupRec(r));
+    if (su !== resinSup) saveSup(su);
+    const cu = upsertContact(resinCust, 'company', resinCustRec(r));
+    if (cu !== resinCust) saveCust(cu);
+    setModal(null);
+  };
+  const del = id => {
+    if (!confirm('確定刪除此塑膠粒訂購單？')) return;
+    const u = resins.filter(x => x.id !== id);
+    setResins(u);
+    DB.save('yl-resin', u);
+  };
+  const years = [...new Set(resins.map(r => toROCM(r.date).split('-')[0]))].filter(Boolean).sort().reverse();
+  const filt = resins.filter(r => {
+    const m = toROCM(r.date);
+    return (!filterYear || m.startsWith(filterYear + '-')) && (!filterMonth || m.endsWith('-' + filterMonth));
+  }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const upcoming = r => r.arrivalDate && r.arrivalDate >= today();
+  const subBtn = (k, t) => h("button", { className: "btn" + (sub === k ? " btn-primary" : ""), onClick: () => setSub(k) }, t);
+  const thisM = toROCM(today());
+  const mResins = resins.filter(r => toROCM(r.date) === thisM);
+  const stat = (v, l) => h("div", { className: "stat-card" }, h("div", { className: "stat-val" }, v), h("div", { className: "stat-lbl" }, l));
+  return h("div", { className: "resin-theme" },
+    h("div", { className: "stat-grid" },
+      stat(resins.length, "總訂購單數"),
+      stat(mResins.length, "本月訂購單數"),
+      stat(fmtN(mResins.reduce((s, r) => s + resinKg(r.items), 0)) + " 公斤", "本月訂購公斤數"),
+      stat(resins.filter(upcoming).length, "待入廠")),
+    h("div", { style: { display: 'flex', gap: 8, marginBottom: 12 } },
+      subBtn('orders', '🧾 訂購單'), subBtn('sup', '🏭 供應商資料'), subBtn('cust', '🚚 客戶（送貨）資料')),
+    sub === 'sup' && h(ResinContactTable, { title: '塑膠粒供應商', cols: RESIN_SUP_COLS, list: resinSup, onChange: saveSup, countOf: x => resins.filter(r => r.supplier && r.supplier === x.name).length }),
+    sub === 'cust' && h(ResinContactTable, { title: '塑膠粒客戶（送貨對象）', cols: RESIN_CUST_COLS, list: resinCust, onChange: saveCust, countOf: x => resins.filter(r => r.shipCompany && r.shipCompany === x.company).length }),
+    sub === 'orders' && h("div", { className: "card" },
+      h("div", { style: { display: 'flex', gap: 10, marginBottom: 12, alignItems: 'flex-end', flexWrap: 'wrap' } },
+        h("div", null, h("label", null, "篩選年份"), h("select", { value: filterYear, onChange: e => setFilterYear(e.target.value), style: { width: 75 } },
+          h("option", { value: "" }, "全部"), years.map(y => h("option", { key: y, value: y }, y)))),
+        h("div", null, h("label", null, "篩選月份"), h("select", { value: filterMonth, onChange: e => setFilterMonth(e.target.value), style: { width: 105 } },
+          h("option", { value: "" }, "全部月份"), ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map(m => h("option", { key: m, value: m }, m)))),
+        h("button", { className: "btn btn-primary", onClick: () => setModal('new') }, "＋ 新增塑膠粒訂購單"),
+        h("div", { style: { marginLeft: 'auto', alignSelf: 'flex-end', fontSize: 12, color: '#999' } }, "共 ", filt.length, " 筆　總計 ", fmtN(filt.reduce((s, r) => s + resinKg(r.items), 0)), " 公斤")),
+      filt.length ? h("div", { style: { overflowX: 'auto' } }, h("table", { className: "data tbl-center" },
+        h("thead", null, h("tr", null, ["訂購日期", "入廠時間", "供應商", "訂購品項", "總公斤數", "送貨公司", "聯絡人", "電話", "操作"].map(t => h("th", { key: t }, t)))),
+        h("tbody", null, filt.map(r => h("tr", { key: r.id },
+          h("td", null, r.date ? toROC(r.date) : '—'),
+          h("td", { style: { color: upcoming(r) ? '#c0392b' : undefined, fontWeight: upcoming(r) ? 600 : 'normal' } }, r.arrivalDate ? toROC(r.arrivalDate) : '—'),
+          h("td", null, r.supplier || '—'),
+          h("td", { style: { fontSize: 12 } }, (r.items || []).map((it, i) => h("div", { key: i }, [it.product, it.color, it.colorNo && '色號 ' + it.colorNo, fmtN(it.kg || 0) + ' 公斤'].filter(Boolean).join('　')))),
+          h("td", { style: { fontWeight: 600 } }, fmtN(resinKg(r.items))),
+          h("td", null, r.shipCompany || '—'),
+          h("td", null, r.shipName || '—'),
+          h("td", { style: { fontSize: 12 } }, [r.shipMobile, r.shipTel].filter(Boolean).map((t, i) => h("div", { key: i }, t))),
+          h("td", null, h("div", { className: "resin-ops" },
+            h("button", { className: "btn", onClick: () => printResinDoc(r, resinSup.find(s => s.name === r.supplier)) }, "🖨 列印"),
+            h("button", { className: "btn", title: "列印或另存 PDF，傳給供應商送貨時讓客戶簽收", onClick: () => printResinShip(r, resinCust.find(c => c.company === r.shipCompany)) }, "📄 出貨單"),
+            h("button", { className: "btn", onClick: () => setModal(r) }, "編輯"),
+            h("button", { className: "btn", style: { color: '#c00' }, onClick: () => del(r.id) }, "刪除")))))))) :
+        h("div", { className: "empty" },
+          h("div", { style: { fontSize: 40, marginBottom: 10 } }, "🧪"),
+          h("div", { style: { fontSize: 15 } }, "尚無塑膠粒訂購單"))),
+    modal && h(ResinModal, { initial: modal === 'new' ? null : modal, resins, resinSup, resinCust, onSave: save, onClose: () => setModal(null) }));
+}
+
 function NewQuoteModal({
   customers,
   setCustomers,
@@ -9408,6 +9705,9 @@ function App() {
   const [receivables, setReceivables] = useState({});
   const [manualRec, setManualRec] = useState([]);
   const [purchases, setPurchases] = useState([]);
+  const [resins, setResins] = useState([]);
+  const [resinSup, setResinSup] = useState([]);
+  const [resinCust, setResinCust] = useState([]);
   const [quotes, setQuotes] = useState([]);
   const [loggedIn, setLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -9436,8 +9736,8 @@ function App() {
       setLoginPw('');
     }
   };
-  const PROTECTED_TABS = ['purchase', 'statement', 'monthly', 'receivables', 'settings', 'quotes'];
-  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['quotes', '📝 報價單'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['monthly', '📈 月銷售報表'], ['settings', '⚙️ 設定']];
+  const PROTECTED_TABS = ['purchase', 'resin', 'statement', 'monthly', 'receivables', 'settings', 'quotes'];
+  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['quotes', '📝 報價單'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['resin', '🧪 塑膠粒訂購單'], ['monthly', '📈 月銷售報表'], ['settings', '⚙️ 設定']];
   const visibleTabs = loggedIn ? ALL_TABS : [['orders', '📋 銷貨單管理']];
   useEffect(() => {
     const DEFS = {
@@ -9452,7 +9752,10 @@ function App() {
       'yl-manual-rec': [],
       'yl-purchases': INIT_PURCHASES,
       'yl-suppliers': [],
-      'yl-quotes': []
+      'yl-quotes': [],
+      'yl-resin': [],
+      'yl-resin-sup': [],
+      'yl-resin-cust': []
     };
     const apply = d => {
       setOrders(d['yl-orders-v4']);
@@ -9467,6 +9770,9 @@ function App() {
       setPurchases(d['yl-purchases']);
       setSuppliers(d['yl-suppliers']);
       setQuotes(d['yl-quotes']);
+      setResins(d['yl-resin'] || []);
+      setResinSup(d['yl-resin-sup'] || []);
+      setResinCust(d['yl-resin-cust'] || []);
       setLoaded(true);
     };
     // 先用本機快取立刻上畫面，不等網路；伺服器資料回來後再覆蓋
@@ -9660,7 +9966,7 @@ function App() {
     className: "nav-tabs"
   }, visibleTabs.map(([k, l]) => /*#__PURE__*/React.createElement("button", {
     key: k,
-    className: `nav-tab ${tab === k ? 'active' : ''}`,
+    className: `nav-tab ${tab === k ? 'active' : ''} ${k === 'resin' ? 'resin-tab' : ''}`,
     onClick: () => setTab(k)
   }, l))), /*#__PURE__*/React.createElement("div", {
     className: "content"
@@ -9765,7 +10071,7 @@ function App() {
       overflowX: 'auto'
     }
   }, /*#__PURE__*/React.createElement("table", {
-    className: "data tbl-center"
+    className: "data tbl-center orders-tbl"
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "銷貨單號"), /*#__PURE__*/React.createElement("th", null, "客戶名稱"), /*#__PURE__*/React.createElement("th", null, "日期"), /*#__PURE__*/React.createElement("th", null, "項目數"), /*#__PURE__*/React.createElement("th", null, "金額（NT$）"), /*#__PURE__*/React.createElement("th", null, "操作"))), /*#__PURE__*/React.createElement("tbody", null, filtOrders.map(o => /*#__PURE__*/React.createElement(OrderRow, {
     key: o.id,
     order: o,
@@ -9806,6 +10112,13 @@ function App() {
     purchases: purchases,
     setPurchases: setPurchases,
     supplierList: suppliers
+  }), tab === 'resin' && h(ResinView, {
+    resins: resins,
+    setResins: setResins,
+    resinSup: resinSup,
+    setResinSup: setResinSup,
+    resinCust: resinCust,
+    setResinCust: setResinCust
   }), tab === 'statement' && /*#__PURE__*/React.createElement(StatementView, {
     orders: orders,
     customers: customers,
