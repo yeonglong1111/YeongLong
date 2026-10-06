@@ -6400,7 +6400,7 @@ function ResinContactTable({ title, cols, list, onChange, countOf }) {
             h("button", { className: "btn", style: { color: '#c00' }, onClick: () => del(row) }, "刪除"))))),
         !list.length && !isNew && h("tr", null, h("td", { colSpan: cols.length + 2, style: { color: '#999', padding: 20 } }, "尚無資料"))))));
 }
-const newResinItem = last => ({ id: uid(), product: last ? last.product || '' : '', color: '', colorNo: '', kg: '' });
+const newResinItem = last => ({ id: uid(), product: last ? last.product || '' : '', color: '', colorNo: '', kg: '', note: '' });
 function genResinPrintHTML(r, sup) {
   const title = '塑膠粒訂購單';
   const s = sup || {};
@@ -6443,9 +6443,9 @@ function genResinShipHTML(r, cust) {
   const B = 'border:1px solid #000;padding:4px 5px;text-align:center;vertical-align:middle';
   const ib = 'font-weight:700;white-space:nowrap;min-width:84px;display:inline-block';
   const ir = (l, v) => `<div style="margin-bottom:3px"><span style="${ib}">${l}：</span><span>${esc(v)}</span></div>`;
-  const rows = items.map((it, k) => `<tr><td style="${B}">${k + 1}</td><td style="${B}">${esc([it.product, it.color].filter(Boolean).join(' '))}</td><td style="${B}">${it.kg ? fmtN(Number(it.kg)) : ''}</td><td style="${B}">KG</td><td style="${B}">${it.colorNo ? '色號 ' + esc(it.colorNo) : ''}</td></tr>`);
+  const rows = items.map((it, k) => `<tr><td style="${B}">${k + 1}</td><td style="${B}">${esc(it.product)}</td><td style="${B}">${esc(it.color)}</td><td style="${B}">${it.kg ? fmtN(Number(it.kg)) : ''}</td><td style="${B}">KG</td><td style="${B}">${esc(it.note)}</td></tr>`);
   // 品項後面只多留一列空白
-  rows.push(`<tr><td style="${B};height:30px"></td><td style="${B}"></td><td style="${B}"></td><td style="${B}"></td><td style="${B}"></td></tr>`);
+  rows.push(`<tr><td style="${B};height:30px"></td><td style="${B}"></td><td style="${B}"></td><td style="${B}"></td><td style="${B}"></td><td style="${B}"></td></tr>`);
   const total = items.reduce((t, it) => t + (Number(it.kg) || 0), 0);
   const signHt = 80;
   return `<div style="width:210mm;max-height:148mm;padding:5mm;box-sizing:border-box;background:#fff">
@@ -6457,10 +6457,10 @@ function genResinShipHTML(r, cust) {
     <div>${ir('客戶編號', c.custNo)}${ir('統一編號', c.taxId)}${ir('出貨日期', d ? toROC(d) : '')}</div>
   </div>
   <table style="width:100%;border-collapse:collapse;font-size:14pt">
-    <thead><tr><th style="${B};width:7%">No.</th><th style="${B};width:38%">品名</th><th style="${B};width:17%">數量</th><th style="${B};width:11%">單位</th><th style="${B};width:27%">備註</th></tr></thead>
+    <thead><tr><th style="${B};width:7%">No.</th><th style="${B};width:27%">品名</th><th style="${B};width:16%">顏色</th><th style="${B};width:15%">數量</th><th style="${B};width:10%">單位</th><th style="${B};width:25%">備註</th></tr></thead>
     <tbody>${rows.join('')}
-      <tr><td colspan="2" style="${B};text-align:right;padding-right:10px;font-weight:700">合計</td><td style="${B};font-weight:700">${fmtN(total)}</td><td style="${B};font-weight:700">KG</td><td style="${B}"></td></tr>
-      <tr><td colspan="5" style="${B};height:${signHt}px;text-align:left;vertical-align:top;font-weight:700"><div style="display:flex"><div style="width:45%">客戶簽收</div><div style="width:28%">倉庫</div><div style="width:27%">填表</div></div></td></tr>
+      <tr><td colspan="3" style="${B};text-align:right;padding-right:10px;font-weight:700">合計</td><td style="${B};font-weight:700">${fmtN(total)}</td><td style="${B};font-weight:700">KG</td><td style="${B}"></td></tr>
+      <tr><td colspan="6" style="${B};height:${signHt}px;text-align:left;vertical-align:top;font-weight:700"><div style="display:flex"><div style="width:45%">客戶簽收</div><div style="width:28%">倉庫</div><div style="width:27%">填表</div></div></td></tr>
     </tbody>
   </table>
   <div style="padding:3px 10px;font-size:11pt">公司地址：${COMPANY.addr}　　電話：${COMPANY.tel}</div>
@@ -6509,12 +6509,13 @@ function ResinModal({ initial, resins, resinSup = [], resinCust = [], onSave, on
       h("div", { style: { fontWeight: 600, margin: '8px 0 4px' } }, "訂購品項"),
       h("datalist", { id: "resin-product-list" }, pastProducts.map(p => h("option", { key: p, value: p }))),
       h("table", { style: { width: '100%', fontSize: 13 } },
-        h("thead", null, h("tr", null, ["訂購品項", "顏色", "色號", "公斤數", ""].map((t, i) => h("th", { key: i }, t)))),
+        h("thead", null, h("tr", null, ["訂購品項", "顏色", "色號", "公斤數", "出貨單備註", ""].map((t, i) => h("th", { key: i }, t)))),
         h("tbody", null, d.items.map((it, idx) => h("tr", { key: it.id },
           h("td", null, h("input", { list: "resin-product-list", value: it.product || '', onChange: e => updItem(idx, 'product', e.target.value), placeholder: "例：ABS", style: { width: '100%' } })),
           h("td", null, h("input", { value: it.color || '', onChange: e => updItem(idx, 'color', e.target.value), placeholder: "例：白色", style: { width: '100%' } })),
           h("td", null, h("input", { value: it.colorNo || '', onChange: e => updItem(idx, 'colorNo', e.target.value), placeholder: "例：90534", style: { width: '100%' } })),
           h("td", null, h("input", { type: "number", min: "0", value: it.kg, onChange: e => updItem(idx, 'kg', e.target.value), placeholder: "公斤", style: { width: '100%' } })),
+          h("td", null, h("input", { value: it.note || '', onChange: e => updItem(idx, 'note', e.target.value), placeholder: "選填", style: { width: '100%' } })),
           h("td", null, d.items.length > 1 && h("button", { className: "btn", style: { color: '#c00', padding: '2px 8px' }, onClick: () => delItem(idx) }, "✕")))))),
       h("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 } },
         h("button", { className: "btn btn-sm", onClick: addItem }, "＋ 新增品項"),
