@@ -98,7 +98,7 @@ table.data th{font-size:15px;padding:11px 10px;font-weight:600}
 .resin-theme table.data td{padding:10px 14px}
 .resin-theme table.data th{padding:9px 14px}
 .resin-theme table.data th:last-child,.resin-theme table.data td:last-child{text-align:right!important}
-.resin-theme .resin-ops{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.resin-ops{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .nav-tab.resin-tab.active{background:#12705f;color:#fff;border-color:#12705f}
 </style>
 </head>
@@ -4243,7 +4243,7 @@ function genPOPrintHTML(po, sup) {
   const s = sup || {};
   const rowsData = items.map((it, i) => `<td>${i + 1}</td><td>${it.spec || ''}</td><td>${it.length || ''}</td><td>${it.qty || ''}</td><td>${it.unitPrice || ''}</td><td>${it.amount ? fmtN(it.amount) : ''}</td><td>${poNote(it)}</td>`);
   const hdrH = `<div class="hdr"><h1>${COMPANY.name}</h1><h2>${COMPANY.nameEn}</h2></div>`;
-  const infoH = `<div class="info"><div><div class="ir"><span class="ib">供應商：</span><span>${po.supplier || ''}</span></div><div class="ir"><span class="ib">聯絡人：</span><span>${s.contact || ''}</span></div><div class="ir"><span class="ib">聯絡電話：</span><span>${s.phone || ''}</span></div></div><div><div class="ir"><span class="ib">訂購日期：</span><span>${toROC(po.date)}</span></div><div class="ir"><span class="ib">應匯款日期：</span><span>${po.dueDate ? toROC(po.dueDate) : ''}</span></div><div class="ir"><span class="ib">付款方式：</span><span>${po.payMethod || '轉帳'}</span></div></div></div>`;
+  const infoH = `<div class="info"><div><div class="ir"><span class="ib">供應商：</span><span>${po.supplier || ''}</span>${s.taxId ? `　<span class="ib" style="min-width:0">統編：</span><span>${s.taxId}</span>` : ''}</div><div class="ir"><span class="ib">聯絡人：</span><span>${s.contact || ''}</span></div><div class="ir"><span class="ib">聯絡電話：</span><span>${s.phone || ''}</span></div></div><div><div class="ir"><span class="ib">訂購日期：</span><span>${toROC(po.date)}</span></div><div class="ir"><span class="ib">應匯款日期：</span><span>${po.dueDate ? toROC(po.dueDate) : ''}</span></div><div class="ir"><span class="ib">付款方式：</span><span>${po.payMethod || '轉帳'}</span></div></div></div>`;
   const chH = `<th style="width:5%">No.</th><th style="width:27%">品名</th><th style="width:11%">規格</th><th style="width:10%">數量</th><th style="width:10%">單價</th><th style="width:13%">金額</th><th style="width:24%">備註</th>`;
   const ftrH = `<div class="footer"><div>公司地址：${COMPANY.addr}　　電話：${COMPANY.tel}</div></div>`;
   const signH = hasTax
@@ -6366,7 +6366,7 @@ const upsertContact = (list, keyField, rec) => {
 };
 const resinSupRec = r => ({ name: r.supplier || '' });
 const resinCustRec = r => ({ company: r.shipCompany || '', name: r.shipName || '', tel: r.shipTel || '', mobile: r.shipMobile || '', address: r.shipAddress || '' });
-function ResinContactTable({ title, cols, list, onChange, countOf }) {
+function ResinContactTable({ title, cols, list, onChange, countOf, hint }) {
   const [editId, setEditId] = useState(null);
   const [draft, setDraft] = useState({});
   const [q, setQ] = useState('');
@@ -6393,7 +6393,7 @@ function ResinContactTable({ title, cols, list, onChange, countOf }) {
   const editRow = h("tr", { key: editId, style: { background: '#fffbe6' } },
     h("td", { style: { color: '#999' } }, editNo >= 0 ? editNo + 1 : '新'),
     cols.map(([f]) => h("td", { key: f, style: { padding: '6px 4px' } }, h("input", { value: draft[f] || '', size: 1, onChange: e => setDraft(d => ({ ...d, [f]: e.target.value })), style: { width: '100%', minWidth: 0, boxSizing: 'border-box' } }))),
-    h("td", null, countOf ? countOf(draft) : ''),
+    countOf && h("td", null, countOf(draft)),
     h("td", null, h("div", { className: "resin-ops" },
       h("button", { className: "btn btn-primary", onClick: save }, "儲存"),
       h("button", { className: "btn", onClick: cancel }, "取消"))));
@@ -6402,19 +6402,19 @@ function ResinContactTable({ title, cols, list, onChange, countOf }) {
       h("div", { style: { fontWeight: 700, fontSize: 15 } }, title),
       h("input", { value: q, onChange: e => setQ(e.target.value), placeholder: "🔍 搜尋", style: { width: 160 } }),
       h("button", { className: "btn btn-primary", onClick: add, disabled: !!editId }, "＋ 新增"),
-      h("div", { style: { marginLeft: 'auto', fontSize: 12, color: '#999' } }, "共 ", list.length, " 筆　💡 儲存訂購單時會自動新增／更新")),
+      h("div", { style: { marginLeft: 'auto', fontSize: 12, color: '#999' } }, "共 ", list.length, " 筆", hint === undefined ? "　💡 儲存訂購單時會自動新增／更新" : hint)),
     h("div", { style: { overflowX: 'auto' } }, h("table", { className: "data tbl-center" },
-      h("thead", null, h("tr", null, h("th", { style: { width: '4%' } }, "No."), cols.map(([f, t, w]) => h("th", { key: f, style: { width: Math.round(w / colsW * 85) + '%' } }, t)), h("th", null, "訂購單數"), h("th", null, "操作"))),
+      h("thead", null, h("tr", null, h("th", { style: { width: '4%' } }, "No."), cols.map(([f, t, w]) => h("th", { key: f, style: { width: Math.round(w / colsW * 85) + '%' } }, t)), countOf && h("th", null, "訂購單數"), h("th", null, "操作"))),
       h("tbody", null,
         isNew && editRow,
         shown.map((row, n) => row.id === editId ? editRow : h("tr", { key: row.id },
           h("td", { style: { color: '#999' } }, n + 1),
           cols.map(([f]) => h("td", { key: f, style: f === 'address' || f === 'note' ? { textAlign: 'left', fontSize: 12 } : null }, row[f] || '—')),
-          h("td", null, countOf ? countOf(row) : ''),
+          countOf && h("td", null, countOf(row)),
           h("td", null, h("div", { className: "resin-ops" },
             h("button", { className: "btn", onClick: () => start(row), disabled: !!editId }, "編輯"),
             h("button", { className: "btn", style: { color: '#c00' }, onClick: () => del(row) }, "刪除"))))),
-        !list.length && !isNew && h("tr", null, h("td", { colSpan: cols.length + 3, style: { color: '#999', padding: 20 } }, "尚無資料"))))));
+        !list.length && !isNew && h("tr", null, h("td", { colSpan: cols.length + (countOf ? 3 : 2), style: { color: '#999', padding: 20 } }, "尚無資料"))))));
 }
 // 塑膠訂購單號：民國日期 + 當天流水號兩碼，例如 115100601
 const nextResinNo = (resins, date, excludeId) => {
@@ -8781,55 +8781,6 @@ function SettingsView({
     phone: '',
     address: ''
   });
-  const [newS, setNewS] = useState({
-    name: '',
-    contact: '',
-    phone: '',
-    address: ''
-  });
-  const [editSId, setEditSId] = useState(null);
-  const [editSData, setEditSData] = useState({});
-  const addSupplier = () => {
-    if (!newS.name.trim()) return alert('請輸入供應商名稱');
-    const s = {
-      ...newS,
-      id: 's' + Date.now()
-    };
-    const u = [...suppliers, s];
-    setSuppliers(u);
-    DB.save('yl-suppliers', u);
-    setNewS({
-      name: '',
-      contact: '',
-      phone: '',
-      address: ''
-    });
-  };
-  const delSupplier = id => {
-    if (!confirm('確定刪除？')) return;
-    const u = suppliers.filter(s => s.id !== id);
-    setSuppliers(u);
-    DB.save('yl-suppliers', u);
-  };
-  const startEditS = s => {
-    setEditSId(s.id);
-    setEditSData({
-      name: s.name,
-      contact: s.contact,
-      phone: s.phone,
-      address: s.address
-    });
-  };
-  const saveEditS = id => {
-    if (!editSData.name.trim()) return alert('供應商名稱不能為空');
-    const u = suppliers.map(s => s.id === id ? {
-      ...s,
-      ...editSData
-    } : s);
-    setSuppliers(u);
-    DB.save('yl-suppliers', u);
-    setEditSId(null);
-  };
   const [editId, setEditId] = useState(null);
   const [editData, setEditData] = useState({});
   const cats = products.map(p => p.name);
@@ -9097,9 +9048,9 @@ function SettingsView({
     }
   }, /*#__PURE__*/React.createElement("table", {
     className: "data"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "名稱"), /*#__PURE__*/React.createElement("th", null, "聯絡人"), /*#__PURE__*/React.createElement("th", null, "電話"), /*#__PURE__*/React.createElement("th", null, "地址"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, customers.map((c, idx) => /*#__PURE__*/React.createElement("tr", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, h("th", { style: { width: '5%' } }, "No."), /*#__PURE__*/React.createElement("th", null, "名稱"), /*#__PURE__*/React.createElement("th", null, "聯絡人"), /*#__PURE__*/React.createElement("th", null, "電話"), /*#__PURE__*/React.createElement("th", null, "地址"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, customers.map((c, idx) => /*#__PURE__*/React.createElement("tr", {
     key: c.id
-  }, editId === c.id ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
+  }, h("td", { style: { color: '#999', textAlign: 'center' } }, idx + 1), editId === c.id ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
     value: editData.name,
     onChange: e => setEditData({
       ...editData,
@@ -9188,132 +9139,13 @@ function SettingsView({
   }, "編輯"), /*#__PURE__*/React.createElement("button", {
     className: "btn btn-danger btn-sm",
     onClick: () => delCust(c.id)
-  }, "刪除"))))))))), tab === 'suppliers' && /*#__PURE__*/React.createElement("div", {
-    className: "card"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "card-title"
-  }, "供應商管理"), /*#__PURE__*/React.createElement("div", {
-    className: "form-grid g4",
-    style: {
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "供應商名稱 *"), /*#__PURE__*/React.createElement("input", {
-    value: newS.name,
-    onChange: e => setNewS({
-      ...newS,
-      name: e.target.value
-    }),
-    placeholder: "必填"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "聯絡人"), /*#__PURE__*/React.createElement("input", {
-    value: newS.contact,
-    onChange: e => setNewS({
-      ...newS,
-      contact: e.target.value
-    })
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "電話"), /*#__PURE__*/React.createElement("input", {
-    value: newS.phone,
-    onChange: e => setNewS({
-      ...newS,
-      phone: e.target.value
-    })
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "地址"), /*#__PURE__*/React.createElement("input", {
-    value: newS.address,
-    onChange: e => setNewS({
-      ...newS,
-      address: e.target.value
-    })
-  }))), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-primary btn-sm",
-    style: {
-      marginBottom: 12
-    },
-    onClick: addSupplier
-  }, "＋ 新增供應商"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      overflowX: 'auto'
-    }
-  }, /*#__PURE__*/React.createElement("table", {
-    className: "data"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "名稱"), /*#__PURE__*/React.createElement("th", null, "聯絡人"), /*#__PURE__*/React.createElement("th", null, "電話"), /*#__PURE__*/React.createElement("th", null, "地址"), /*#__PURE__*/React.createElement("th", null))), /*#__PURE__*/React.createElement("tbody", null, suppliers.map(s => /*#__PURE__*/React.createElement("tr", {
-    key: s.id
-  }, editSId === s.id ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-    value: editSData.name,
-    onChange: e => setEditSData({
-      ...editSData,
-      name: e.target.value
-    }),
-    style: {
-      width: '100%'
-    }
-  })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-    value: editSData.contact,
-    onChange: e => setEditSData({
-      ...editSData,
-      contact: e.target.value
-    }),
-    style: {
-      width: '100%'
-    }
-  })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-    value: editSData.phone,
-    onChange: e => setEditSData({
-      ...editSData,
-      phone: e.target.value
-    }),
-    style: {
-      width: '100%'
-    }
-  })), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("input", {
-    value: editSData.address,
-    onChange: e => setEditSData({
-      ...editSData,
-      address: e.target.value
-    }),
-    style: {
-      width: '100%'
-    }
-  })), /*#__PURE__*/React.createElement("td", {
-    style: {
-      whiteSpace: 'nowrap'
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-primary btn-sm",
-    style: {
-      marginRight: 4
-    },
-    onClick: () => saveEditS(s.id)
-  }, "儲存"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-sm",
-    onClick: () => setEditSId(null)
-  }, "取消"))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: 500
-    }
-  }, s.name), /*#__PURE__*/React.createElement("td", null, s.contact), /*#__PURE__*/React.createElement("td", null, s.phone), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontSize: 11,
-      color: '#666'
-    }
-  }, s.address), /*#__PURE__*/React.createElement("td", {
-    style: {
-      whiteSpace: 'nowrap'
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-sm",
-    style: {
-      marginRight: 4
-    },
-    onClick: () => startEditS(s)
-  }, "編輯"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btn-danger btn-sm",
-    onClick: () => delSupplier(s.id)
-  }, "刪除"))))))), suppliers.length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: 'center',
-      color: '#999',
-      padding: 20
-    }
-  }, "尚無供應商資料"))), tab === 'prices' && /*#__PURE__*/React.createElement("div", {
+  }, "刪除"))))))))), tab === 'suppliers' && h(ResinContactTable, {
+    title: '供應商管理',
+    cols: [['name', '供應商名稱', 160], ['taxId', '統一編號', 100], ['contact', '聯絡人', 90], ['phone', '電話', 120], ['address', '地址', 240]],
+    list: suppliers,
+    onChange: u => { setSuppliers(u); DB.save('yl-suppliers', u); },
+    hint: ''
+  }), tab === 'prices' && /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "card-title"
