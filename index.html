@@ -78,6 +78,12 @@ table.data tr:hover td{background:#f8fafd}
 /* 表格全部置中（訂購單、銷貨單、報價單列表） */
 .po-items th, .po-items td, .tbl-center th, .tbl-center td { text-align: center !important; }
 .po-items input, .tbl-center input { text-align: center; }
+/* 所有頁面不出現左右拉條：標題可換行、按鈕可換行、內容寬度放寬 */
+.content{max-width:1440px}
+table.data th{white-space:normal}
+table.data td{word-break:break-word}
+table.data td div[style*="flex-wrap: nowrap"]{flex-wrap:wrap!important}
+.modal{overflow-x:hidden}
 /* 所有列表的標題列放大 */
 table.data th{font-size:15px;padding:11px 10px;font-weight:600}
 .items-table th{font-size:13px;padding:8px}
@@ -91,8 +97,8 @@ table.data th{font-size:15px;padding:11px 10px;font-weight:600}
 .nav-tab.resin-tab{color:#12705f}
 .resin-theme table.data td{padding:10px 14px}
 .resin-theme table.data th{padding:9px 14px}
-.resin-theme table.data th:last-child,.resin-theme table.data td:last-child{text-align:right!important;white-space:nowrap;width:1%}
-.resin-theme .resin-ops{display:flex;gap:6px;justify-content:flex-end;flex-wrap:nowrap}
+.resin-theme table.data th:last-child,.resin-theme table.data td:last-child{text-align:right!important}
+.resin-theme .resin-ops{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .nav-tab.resin-tab.active{background:#12705f;color:#fff;border-color:#12705f}
 </style>
 </head>
@@ -6337,6 +6343,8 @@ function PurchaseView({
 /* ===== NEW QUOTE MODAL ===== */
 /* ===== 塑膠粒訂購單 ===== */
 const resinKg = items => (items || []).reduce((s, it) => s + (Number(it.kg) || 0), 0);
+// 價格只在畫面上顯示（每公斤單價），列印的訂購單／出貨單都不會出現
+const resinAmt = (items, f) => Math.round((items || []).reduce((s, it) => s + (Number(it.kg) || 0) * (Number(it[f]) || 0), 0));
 // 塑膠粒業務專用的供應商／客戶資料（和門檻業務的資料分開）
 const RESIN_SUP_COLS = [['name', '供應商名稱', 160], ['contact', '聯絡人', 90], ['tel', '電話', 120], ['mobile', '手機', 120], ['address', '地址', 220], ['note', '備註', 140]];
 const RESIN_CUST_COLS = [['company', '公司名稱', 170], ['custNo', '客戶編號', 90], ['taxId', '統一編號', 100], ['name', '姓名', 90], ['tel', '公司電話', 120], ['mobile', '手機電話', 120], ['address', '公司地址', 240], ['note', '備註', 140]];
@@ -6359,6 +6367,7 @@ function ResinContactTable({ title, cols, list, onChange, countOf }) {
   const [draft, setDraft] = useState({});
   const [q, setQ] = useState('');
   const keyField = cols[0][0];
+  const colsW = cols.reduce((t, c) => t + c[2], 0); // 依設定比例分配欄寬，不出現左右滑條
   const start = row => { setEditId(row.id); setDraft({ ...row }); };
   const add = () => { const row = { id: uid() }; setEditId(row.id); setDraft(row); };
   const cancel = () => { setEditId(null); setDraft({}); };
@@ -6376,8 +6385,10 @@ function ResinContactTable({ title, cols, list, onChange, countOf }) {
   };
   const isNew = editId && !list.some(x => x.id === editId);
   const shown = list.filter(x => !q || cols.some(([f]) => String(x[f] || '').includes(q))).sort((a, b) => (a[keyField] || '').localeCompare(b[keyField] || '', 'zh-Hant'));
+  const editNo = shown.findIndex(x => x.id === editId);
   const editRow = h("tr", { key: editId, style: { background: '#fffbe6' } },
-    cols.map(([f, , w]) => h("td", { key: f }, h("input", { value: draft[f] || '', onChange: e => setDraft(d => ({ ...d, [f]: e.target.value })), style: { width: w } }))),
+    h("td", { style: { color: '#999' } }, editNo >= 0 ? editNo + 1 : '新'),
+    cols.map(([f]) => h("td", { key: f, style: { padding: '6px 4px' } }, h("input", { value: draft[f] || '', size: 1, onChange: e => setDraft(d => ({ ...d, [f]: e.target.value })), style: { width: '100%', minWidth: 0, boxSizing: 'border-box' } }))),
     h("td", null, countOf ? countOf(draft) : ''),
     h("td", null, h("div", { className: "resin-ops" },
       h("button", { className: "btn btn-primary", onClick: save }, "儲存"),
@@ -6389,16 +6400,17 @@ function ResinContactTable({ title, cols, list, onChange, countOf }) {
       h("button", { className: "btn btn-primary", onClick: add, disabled: !!editId }, "＋ 新增"),
       h("div", { style: { marginLeft: 'auto', fontSize: 12, color: '#999' } }, "共 ", list.length, " 筆　💡 儲存訂購單時會自動新增／更新")),
     h("div", { style: { overflowX: 'auto' } }, h("table", { className: "data tbl-center" },
-      h("thead", null, h("tr", null, [...cols.map(c => c[1]), "訂購單數", "操作"].map(t => h("th", { key: t }, t)))),
+      h("thead", null, h("tr", null, h("th", { style: { width: '4%' } }, "No."), cols.map(([f, t, w]) => h("th", { key: f, style: { width: Math.round(w / colsW * 85) + '%' } }, t)), h("th", null, "訂購單數"), h("th", null, "操作"))),
       h("tbody", null,
         isNew && editRow,
-        shown.map(row => row.id === editId ? editRow : h("tr", { key: row.id },
+        shown.map((row, n) => row.id === editId ? editRow : h("tr", { key: row.id },
+          h("td", { style: { color: '#999' } }, n + 1),
           cols.map(([f]) => h("td", { key: f, style: f === 'address' || f === 'note' ? { textAlign: 'left', fontSize: 12 } : null }, row[f] || '—')),
           h("td", null, countOf ? countOf(row) : ''),
           h("td", null, h("div", { className: "resin-ops" },
             h("button", { className: "btn", onClick: () => start(row), disabled: !!editId }, "編輯"),
             h("button", { className: "btn", style: { color: '#c00' }, onClick: () => del(row) }, "刪除"))))),
-        !list.length && !isNew && h("tr", null, h("td", { colSpan: cols.length + 2, style: { color: '#999', padding: 20 } }, "尚無資料"))))));
+        !list.length && !isNew && h("tr", null, h("td", { colSpan: cols.length + 3, style: { color: '#999', padding: 20 } }, "尚無資料"))))));
 }
 const newResinItem = last => ({ id: uid(), product: last ? last.product || '' : '', color: '', colorNo: '', kg: '', note: '' });
 function genResinPrintHTML(r, sup) {
@@ -6492,11 +6504,11 @@ function ResinModal({ initial, resins, resinSup = [], resinCust = [], onSave, on
   const handleSave = () => {
     const items = d.items.filter(it => (it.product || '').trim() || it.color || it.colorNo || it.kg);
     if (!items.length) return alert('請至少填寫一個訂購品項');
-    onSave({ ...d, items: items.map(it => ({ ...it, kg: Number(it.kg) || 0 })) });
+    onSave({ ...d, items: items.map(it => ({ ...it, kg: Number(it.kg) || 0, buyPrice: Number(it.buyPrice) || 0, sellPrice: Number(it.sellPrice) || 0 })) });
   };
   const lbl = (t, el) => h("div", null, h("label", null, t), el);
   return h("div", { className: "modal-overlay", onClick: onClose },
-    h("div", { className: "modal", style: { maxWidth: 820 }, onClick: e => e.stopPropagation() },
+    h("div", { className: "modal", style: { maxWidth: 1040 }, onClick: e => e.stopPropagation() },
       h("div", { className: "modal-header" },
         h("div", { className: "modal-title" }, initial ? "✏️ 編輯塑膠粒訂購單" : "🧪 新增塑膠粒訂購單"),
         h("button", { className: "btn", onClick: onClose }, "✕")),
@@ -6509,17 +6521,22 @@ function ResinModal({ initial, resins, resinSup = [], resinCust = [], onSave, on
       h("div", { style: { fontWeight: 600, margin: '8px 0 4px' } }, "訂購品項"),
       h("datalist", { id: "resin-product-list" }, pastProducts.map(p => h("option", { key: p, value: p }))),
       h("table", { style: { width: '100%', fontSize: 13 } },
-        h("thead", null, h("tr", null, ["訂購品項", "顏色", "色號", "公斤數", "出貨單備註", ""].map((t, i) => h("th", { key: i }, t)))),
+        h("thead", null, h("tr", null, ["訂購品項", "顏色", "色號", "公斤數", "訂購單價/kg", "出貨單價/kg", "出貨單備註", ""].map((t, i) => h("th", { key: i }, t)))),
         h("tbody", null, d.items.map((it, idx) => h("tr", { key: it.id },
           h("td", null, h("input", { list: "resin-product-list", value: it.product || '', onChange: e => updItem(idx, 'product', e.target.value), placeholder: "例：ABS", style: { width: '100%' } })),
           h("td", null, h("input", { value: it.color || '', onChange: e => updItem(idx, 'color', e.target.value), placeholder: "例：白色", style: { width: '100%' } })),
           h("td", null, h("input", { value: it.colorNo || '', onChange: e => updItem(idx, 'colorNo', e.target.value), placeholder: "例：90534", style: { width: '100%' } })),
           h("td", null, h("input", { type: "number", min: "0", value: it.kg, onChange: e => updItem(idx, 'kg', e.target.value), placeholder: "公斤", style: { width: '100%' } })),
+          h("td", null, h("input", { type: "number", min: "0", step: "0.01", value: it.buyPrice || '', onChange: e => updItem(idx, 'buyPrice', e.target.value), placeholder: "訂購價", style: { width: '100%' } })),
+          h("td", null, h("input", { type: "number", min: "0", step: "0.01", value: it.sellPrice || '', onChange: e => updItem(idx, 'sellPrice', e.target.value), placeholder: "出貨價", style: { width: '100%' } })),
           h("td", null, h("input", { value: it.note || '', onChange: e => updItem(idx, 'note', e.target.value), placeholder: "選填", style: { width: '100%' } })),
           h("td", null, d.items.length > 1 && h("button", { className: "btn", style: { color: '#c00', padding: '2px 8px' }, onClick: () => delItem(idx) }, "✕")))))),
       h("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 } },
         h("button", { className: "btn btn-sm", onClick: addItem }, "＋ 新增品項"),
-        h("div", { style: { fontSize: 13 } }, "總公斤數：", h("span", { style: { color: '#c9a84c', fontWeight: 700 } }, fmtN(resinKg(d.items))), " 公斤")),
+        h("div", { style: { fontSize: 13, textAlign: 'right' } }, "總公斤數：", h("span", { style: { color: '#c9a84c', fontWeight: 700 } }, fmtN(resinKg(d.items))), " 公斤",
+          "　訂購金額：", h("b", null, "NT$ ", fmtN(resinAmt(d.items, 'buyPrice'))),
+          "　出貨金額：", h("b", null, "NT$ ", fmtN(resinAmt(d.items, 'sellPrice'))),
+          "　價差：", h("b", { style: { color: '#12705f' } }, "NT$ ", fmtN(resinAmt(d.items, 'sellPrice') - resinAmt(d.items, 'buyPrice'))))),
       h("div", { style: { fontWeight: 600, margin: '14px 0 4px' } }, "送貨資訊"),
       h("datalist", { id: "resin-ship-list" }, resinCust.map(c => h("option", { key: c.id, value: c.company }))),
       h("div", { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 10 } },
@@ -6583,6 +6600,11 @@ function ResinView({ resins, setResins, resinSup, setResinSup, resinCust, setRes
       stat(mResins.length, "本月訂購單數"),
       stat(fmtN(mResins.reduce((s, r) => s + resinKg(r.items), 0)) + " 公斤", "本月訂購公斤數"),
       stat(resins.filter(upcoming).length, "待入廠")),
+    h("div", { className: "stat-grid" },
+      stat("NT$ " + fmtN(mResins.reduce((s, r) => s + resinAmt(r.items, 'buyPrice'), 0)), "本月訂購金額"),
+      stat("NT$ " + fmtN(mResins.reduce((s, r) => s + resinAmt(r.items, 'sellPrice'), 0)), "本月出貨金額"),
+      stat("NT$ " + fmtN(mResins.reduce((s, r) => s + resinAmt(r.items, 'sellPrice') - resinAmt(r.items, 'buyPrice'), 0)), "本月價差"),
+      stat("NT$ " + fmtN(resins.reduce((s, r) => s + resinAmt(r.items, 'sellPrice') - resinAmt(r.items, 'buyPrice'), 0)), "累計價差")),
     h("div", { style: { display: 'flex', gap: 8, marginBottom: 12 } },
       subBtn('orders', '🧾 訂購單'), subBtn('sup', '🏭 供應商資料'), subBtn('cust', '🚚 客戶（送貨）資料')),
     sub === 'sup' && h(ResinContactTable, { title: '塑膠粒供應商', cols: RESIN_SUP_COLS, list: resinSup, onChange: saveSup, countOf: x => resins.filter(r => r.supplier && r.supplier === x.name).length }),
@@ -6596,18 +6618,20 @@ function ResinView({ resins, setResins, resinSup, setResinSup, resinCust, setRes
         h("button", { className: "btn btn-primary", onClick: () => setModal('new') }, "＋ 新增塑膠粒訂購單"),
         h("div", { style: { marginLeft: 'auto', alignSelf: 'flex-end', fontSize: 12, color: '#999' } }, "共 ", filt.length, " 筆　總計 ", fmtN(filt.reduce((s, r) => s + resinKg(r.items), 0)), " 公斤")),
       filt.length ? h("div", { style: { overflowX: 'auto' } }, h("table", { className: "data tbl-center" },
-        h("thead", null, h("tr", null, ["訂購日期", "入廠時間", "供應商", "訂購品項", "總公斤數", "送貨公司", "聯絡人", "電話", "操作"].map(t => h("th", { key: t }, t)))),
+        h("thead", null, h("tr", null, ["訂購日期", "入廠時間", "供應商", "訂購品項", "總公斤數", "金額（NT$）", "送貨資訊", "操作"].map(t => h("th", { key: t }, t)))),
         h("tbody", null, filt.map(r => h("tr", { key: r.id },
           h("td", null, r.date ? toROC(r.date) : '—'),
           h("td", { style: { color: upcoming(r) ? '#c0392b' : undefined, fontWeight: upcoming(r) ? 600 : 'normal' } }, r.arrivalDate ? toROC(r.arrivalDate) : '—'),
           h("td", null, r.supplier || '—'),
           h("td", { style: { fontSize: 12 } }, (r.items || []).map((it, i) => h("div", { key: i }, [it.product, it.color, it.colorNo && '色號 ' + it.colorNo, fmtN(it.kg || 0) + ' 公斤'].filter(Boolean).join('　')))),
           h("td", { style: { fontWeight: 600 } }, fmtN(resinKg(r.items))),
-          h("td", null, r.shipCompany || '—'),
-          h("td", null, r.shipName || '—'),
-          h("td", { style: { fontSize: 12 } }, [r.shipMobile, r.shipTel].filter(Boolean).map((t, i) => h("div", { key: i }, t))),
+          h("td", { style: { fontSize: 12, textAlign: 'left' } },
+            h("div", null, "訂購 ", fmtN(resinAmt(r.items, 'buyPrice'))),
+            h("div", null, "出貨 ", fmtN(resinAmt(r.items, 'sellPrice'))),
+            h("div", { style: { color: '#12705f', fontWeight: 600 } }, "價差 ", fmtN(resinAmt(r.items, 'sellPrice') - resinAmt(r.items, 'buyPrice')))),
+          h("td", { style: { fontSize: 12 } }, [r.shipCompany, r.shipName, r.shipMobile, r.shipTel].filter(Boolean).map((t, i) => h("div", { key: i, style: i === 0 ? { fontWeight: 600 } : null }, t))),
           h("td", null, h("div", { className: "resin-ops" },
-            h("button", { className: "btn", onClick: () => printResinDoc(r, resinSup.find(s => s.name === r.supplier)) }, "🖨 列印"),
+            h("button", { className: "btn", onClick: () => printResinDoc(r, resinSup.find(s => s.name === r.supplier)) }, "🖨 訂購單"),
             h("button", { className: "btn", title: "列印或另存 PDF，傳給供應商送貨時讓客戶簽收", onClick: () => printResinShip(r, resinCust.find(c => c.company === r.shipCompany)) }, "📄 出貨單"),
             h("button", { className: "btn", onClick: () => setModal(r) }, "編輯"),
             h("button", { className: "btn", style: { color: '#c00' }, onClick: () => del(r.id) }, "刪除")))))))) :
