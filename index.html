@@ -3758,6 +3758,15 @@ const toROCM = iso => {
   return `${d.getFullYear() - 1911}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 const getON = iso => toROC(iso).replace(/-/g, '');
+// 單號＝民國日期＋當天流水號兩碼（01、02、03…），例如 115100601
+const nextSeqNo = (list, field, date, excludeId) => {
+  const prefix = getON(date || today());
+  const max = (list || []).filter(x => x.id !== excludeId && String(x[field] || '').startsWith(prefix) && String(x[field]).length === prefix.length + 2)
+    .reduce((m, x) => Math.max(m, parseInt(String(x[field]).slice(prefix.length), 10) || 0), 0);
+  return prefix + String(max + 1).padStart(2, '0');
+};
+// 編輯時：日期沒變就保留原單號，日期改了才重新編號
+const keepOrNextNo = (list, field, rec, date) => rec[field] && rec.date === date ? rec[field] : nextSeqNo(list, field, date, rec.id);
 const getQN = iso => 'YL' + toROC(iso).replace(/-/g, '');
 const DEFAULT_QUOTE_NOTE = '1. 本報價單有效期限為 10 天，逾期原物料或成本如有異動將另行報價，恕不適用舊價下單。\n2. 付款條件：訂金 50%、尾款 50%（匯款或即期支票）或全額付款。\n3. 以上金額均為未稅價，另加 5% 營業稅。';
 const today = () => new Date().toISOString().slice(0, 10);
@@ -4453,6 +4462,7 @@ function NewOrderModal({
   products,
   colors,
   colorSurcharge = {},
+  orders = [],
   onSave,
   onClose
 }) {
@@ -4616,7 +4626,7 @@ function NewOrderModal({
       id: uid(),
       customerId: cid,
       date,
-      orderNumber: getON(date),
+      orderNumber: nextSeqNo(orders, 'orderNumber', date),
       items: items.map((it, i) => ({
         ...it,
         no: i + 1
@@ -4657,7 +4667,7 @@ function NewOrderModal({
     onChange: e => setDate(e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "銷貨單號（自動產生）"), /*#__PURE__*/React.createElement("input", {
     readOnly: true,
-    value: date ? getON(date) : '',
+    value: date ? nextSeqNo(orders, 'orderNumber', date) : '',
     style: {
       background: '#f8fafd',
       color: '#1a2744',
@@ -4948,6 +4958,7 @@ function EditOrderModal({
   products,
   colors,
   colorSurcharge = {},
+  orders = [],
   onUpdate,
   onClose
 }) {
@@ -5072,7 +5083,7 @@ function EditOrderModal({
       ...order,
       customerId: cid,
       date,
-      orderNumber: getON(date),
+      orderNumber: keepOrNextNo(orders, 'orderNumber', order, date),
       items: items.map((it, i) => ({
         ...it,
         no: i + 1
@@ -5113,7 +5124,7 @@ function EditOrderModal({
     onChange: e => setDate(e.target.value)
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", null, "銷貨單號（自動產生）"), /*#__PURE__*/React.createElement("input", {
     readOnly: true,
-    value: date ? getON(date) : '',
+    value: date ? keepOrNextNo(orders, 'orderNumber', order, date) : '',
     style: {
       background: '#f8fafd',
       color: '#1a2744',
@@ -6417,12 +6428,7 @@ function ResinContactTable({ title, cols, list, onChange, countOf, hint }) {
         !list.length && !isNew && h("tr", null, h("td", { colSpan: cols.length + (countOf ? 3 : 2), style: { color: '#999', padding: 20 } }, "尚無資料"))))));
 }
 // 塑膠訂購單號：民國日期 + 當天流水號兩碼，例如 115100601
-const nextResinNo = (resins, date, excludeId) => {
-  const prefix = getON(date || today());
-  const max = resins.filter(r => r.id !== excludeId && (r.orderNo || '').startsWith(prefix) && r.orderNo.length === prefix.length + 2)
-    .reduce((m, r) => Math.max(m, parseInt(r.orderNo.slice(prefix.length), 10) || 0), 0);
-  return prefix + String(max + 1).padStart(2, '0');
-};
+const nextResinNo = (resins, date, excludeId) => nextSeqNo(resins, 'orderNo', date, excludeId);
 const newResinItem = last => ({ id: uid(), product: last ? last.product || '' : '', color: '', colorNo: '', kg: '', note: '' });
 function genResinPrintHTML(r, sup) {
   const title = '塑膠訂購單';
@@ -9742,6 +9748,19 @@ function App() {
           items
         } : order;
       });
+      // 舊格式銷貨單號（只有日期）改成日期＋當天流水號：同一天依建立先後排 01、02、03…
+      const isNewNo = x => /^\d{9}$/.test(String(x.orderNumber || '')) && String(x.orderNumber).startsWith(getON(x.date));
+      if (o.some(x => x.date && !isNewNo(x))) {
+        const idx = new Map(o.map((x, i) => [x.id, i]));
+        const todo = o.filter(x => x.date && !isNewNo(x)).sort((a, b) => a.date.localeCompare(b.date) || idx.get(b.id) - idx.get(a.id));
+        let cur = o;
+        todo.forEach(x => {
+          const no = nextSeqNo(cur, 'orderNumber', x.date, x.id);
+          cur = cur.map(y => y.id === x.id ? { ...y, orderNumber: no } : y);
+        });
+        o = cur;
+        ordNeedSave = true;
+      }
       if (ordNeedSave) DB.save('yl-orders-v4', o);
       apply({
         ...d,
@@ -10062,6 +10081,7 @@ function App() {
     products: products,
     colors: colors,
     colorSurcharge: colorSurcharge,
+    orders: orders,
     onSave: saveOrder,
     onClose: () => setShowNew(false)
   }), editOrder && /*#__PURE__*/React.createElement(EditOrderModal, {
@@ -10071,6 +10091,7 @@ function App() {
     products: products,
     colors: colors,
     colorSurcharge: colorSurcharge,
+    orders: orders,
     onUpdate: updateOrder,
     onClose: () => setEditOrder(null)
   })));
