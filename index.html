@@ -4085,6 +4085,7 @@ body{font-family:"Microsoft JhengHei","PingFang TC",sans-serif;font-size:11pt;co
 .hdr h2{font-size:7pt;letter-spacing:1px}
 .ttl{text-align:center;font-size:16pt;font-weight:700;padding:2px 8px 2px}
 .pg{font-size:10pt;font-weight:400}
+.ttl-c{font-size:12pt;padding:3px 8px;border-bottom:1px solid #000}
 .info{display:grid;grid-template-columns:1fr 1fr;padding:0 8px 4px;font-size:12pt;border-bottom:1px solid #000}
 .ir{display:flex;align-items:baseline;margin-bottom:2px}
 .ib{font-weight:700;white-space:nowrap;min-width:60px}
@@ -4105,6 +4106,7 @@ tr.dr:nth-child(even) td{background:#eef1f6}
   <div id="ms"><table><tbody>${signH}</tbody></table></div>
   ${noteH ? `<div id="mn"><table><tbody>${noteH}</tbody></table></div>` : ''}
   <div id="mf">${ftrH}</div>
+  <div id="mc"><div class="ttl ttl-c">${title}（續）</div></div>
 </div>
 <div id="out"></div>
 <script>
@@ -4121,23 +4123,27 @@ window.onload=function(){
   var mchH=document.getElementById('mch').offsetHeight;
   var msH=document.getElementById('ms').offsetHeight;
   var mfH=document.getElementById('mf').offsetHeight;
+  var mcH=document.getElementById('mc').offsetHeight;
   var mnEl=document.getElementById('mn');
   var mnH=mnEl?mnEl.offsetHeight:0;
   var drs=document.querySelectorAll('#mr .dr');
   var rh=[].map.call(drs,function(el){return el.offsetHeight;});
   document.getElementById('meas').remove();
-  var ovh=mhH+mchH+mfH;
+  // 第一頁：公司抬頭＋客戶資料＋頁尾地址；第二頁起只放小標題（續），不重複抬頭、客戶資料和公司地址，省空間少分頁
+  function capOf(p){return PH-4-mchH-(p===0?mhH+mfH:mcH);}
+  function head(p,pg){return p===0?D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info:'<div class="ttl ttl-c">'+D.title+'（續）'+pg+'</div>';}
+  function foot(p){return p===0?D.ftr:'';}
   // 初步分頁（估算）
   var pages=[];var cur=[];var usedH=0;
   for(var i=0;i<rh.length;i++){
-    if(usedH+rh[i]<=PH-4-ovh){cur.push(i);usedH+=rh[i];}
-    else{if(cur.length){pages.push(cur.slice());}cur=[i];usedH=rh[i];}
+    if(usedH+rh[i]<=capOf(pages.length)||!cur.length){cur.push(i);usedH+=rh[i];}
+    else{pages.push(cur);cur=[i];usedH=rh[i];}
   }
-  if(cur.length)pages.push(cur);
+  pages.push(cur);
   var lp=pages[pages.length-1];
   var lh=lp.reduce(function(s,i){return s+rh[i];},0);
   // 只為了簽收欄留空間才會把資料列擠到下一頁；備註／L型圖不影響資料列分頁
-  while(lh+ovh+msH>PH-4&&lp.length>1){
+  while(lh+msH>capOf(pages.length-1)&&lp.length>1){
     var mv=lp.pop();lh-=rh[mv];
     var np=[mv];pages.push(np);lp=np;lh=rh[mv];
   }
@@ -4152,14 +4158,14 @@ window.onload=function(){
       var rows='';for(var k=0;k<pr.length;k++)rows+='<tr class="dr">'+D.r[pr[k]]+'</tr>';
       var div=document.createElement('div');
       div.className='page'+(isLast?' last':'');
-      div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
+      div.innerHTML=head(p,pg)
         +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLast?D.sign:'')+'</tbody></table>'
-        +D.ftr;
+        +foot(p);
       out.appendChild(div);
     }
   }
-  // 迭代校正：量測實際渲染高度，超出就移最後一筆到下一頁（僅根據資料列本身，不受備註／L型圖影響）
-  for(var iter=0;iter<20;iter++){
+  // 迭代校正：量測實際渲染高度，超出就移最後一筆到下一頁；有空間就把下一頁的資料拉回來
+  for(var iter=0;iter<40;iter++){
     buildRowsOnly();
     var divs=document.getElementById('out').querySelectorAll('.page');
     var changed=false;
@@ -4168,7 +4174,7 @@ window.onload=function(){
         var mv2=pages[p].pop();
         if(p+1>=pages.length)pages.push([mv2]);
         else pages[p+1].unshift(mv2);
-        changed=true;
+        changed=true;break;
       }
     }
     if(!changed)break;
@@ -4193,16 +4199,16 @@ window.onload=function(){
       if(isLastRowsPage)tail=(splitNote?'':D.note)+D.sign;
       var div=document.createElement('div');
       div.className='page'+(isVeryLast?' last':'');
-      div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
+      div.innerHTML=head(p,pg)
         +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+tail+'</tbody></table>'
-        +D.ftr;
+        +foot(p);
       out.appendChild(div);
     }
     if(splitNote){
       var pg2=totalPages>1?'　<span class="pg">(第'+totalPages+'頁/共'+totalPages+'頁)</span>':'';
       var ndiv=document.createElement('div');
       ndiv.className='page last';
-      ndiv.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg2+'</div>'+D.info+D.noteBig+D.ftr;
+      ndiv.innerHTML=head(tp,pg2)+D.noteBig;
       out.appendChild(ndiv);
     }
   }
@@ -7574,6 +7580,50 @@ window.onload=function(){
 </body></html>`;
 }
 
+/* ===== 每月一鍵下載：銷貨單／對帳單轉 PDF 打包成 ZIP ===== */
+let pdfLibsP = null;
+function loadPdfLibs() {
+  if (!pdfLibsP) pdfLibsP = Promise.all([
+    'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+  ].map(src => new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = ok;
+    s.onerror = () => fail(new Error('元件載入失敗，請確認網路連線'));
+    document.head.appendChild(s);
+  }))).catch(e => { pdfLibsP = null; throw e; });
+  return pdfLibsP;
+}
+const fileSafe = s => String(s || '').replace(/[\\/:*?"<>|]/g, '').trim();
+const newPdf = () => ({ doc: new jspdf.jsPDF({ unit: 'mm', format: [214, 140], orientation: 'landscape' }), n: 0 });
+// 列印用 HTML 放進隱藏 iframe 跑完分頁（不跳列印視窗），每個 .page 轉成 PDF 一頁（21.4×14cm、邊距 5mm，同列印）
+async function addHtmlToPdf(pdf, html) {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed;left:-10000px;top:0;width:20.4cm;height:14cm;border:0';
+  document.body.appendChild(f);
+  try {
+    const doc = f.contentDocument;
+    doc.open();
+    doc.write(html.replace('window.print();', 'window.__ready=1;'));
+    doc.close();
+    const t0 = Date.now();
+    while (!f.contentWindow.__ready) {
+      if (Date.now() - t0 > 20000) throw new Error('排版逾時');
+      await new Promise(r => setTimeout(r, 100));
+    }
+    f.style.height = doc.body.scrollHeight + 'px';
+    for (const pg of doc.querySelectorAll('.page')) {
+      const c = await html2canvas(pg, { scale: 2, backgroundColor: '#ffffff', logging: false });
+      if (pdf.n++) pdf.doc.addPage([214, 140], 'landscape');
+      pdf.doc.addImage(c.toDataURL('image/jpeg', 0.92), 'JPEG', 5, 5, 204, 204 * c.height / c.width);
+    }
+  } finally {
+    f.remove();
+  }
+}
+
 /* ===== STATEMENT VIEW ===== */
 function StatementView({
   orders,
@@ -7651,6 +7701,42 @@ function StatementView({
     w.document.write(html);
     w.document.close();
   };
+  // 一鍵下載：ZIP 內分「11501 銷貨單／11501萬誠.pdf」（當月所有銷貨單）與「11501 對帳單／11501萬誠 對帳單.pdf」兩個資料夾
+  const [dlMsg, setDlMsg] = useState('');
+  const handleDownload = async () => {
+    if (!filterMonth) return alert('請先選擇月份');
+    const custs = cid && cid !== 'ALL' ? (cust ? [cust] : []) : filteredCustomers;
+    if (!custs.length) return alert('此月份沒有銷貨單');
+    const ym = filterMonth.replace('-', '');
+    try {
+      setDlMsg('載入中…');
+      await loadPdfLibs();
+      const zip = new JSZip();
+      for (let i = 0; i < custs.length; i++) {
+        const c = custs[i];
+        setDlMsg(`產生中 ${i + 1}/${custs.length}：${c.name}`);
+        const base = ym + fileSafe(c.name);
+        const mos = orders.filter(o => o.customerId === c.id && toROCM(o.date) === filterMonth)
+          .sort((a, b) => (a.date + (a.orderNumber || '')).localeCompare(b.date + (b.orderNumber || '')));
+        const so = newPdf();
+        for (const o of mos) await addHtmlToPdf(so, genPrintHTML(o, c, false));
+        if (so.n) zip.file(ym + ' 銷貨單/' + base + '.pdf', so.doc.output('blob'));
+        const st = newPdf();
+        await addHtmlToPdf(st, genMultiStmtHTML([{ monthsData: [getMonthDataForCust(c.id, filterMonth)], cust: c }]));
+        if (st.n) zip.file(ym + ' 對帳單/' + base + ' 對帳單.pdf', st.doc.output('blob'));
+      }
+      setDlMsg('打包中…');
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = ym + ' 銷貨單及對帳單.zip';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } catch (e) {
+      alert('下載失敗：' + e.message);
+    }
+    setDlMsg('');
+  };
   const rocML = m => {
     const [y, mo] = m.split('-');
     return `${y}年${mo}月`;
@@ -7661,7 +7747,7 @@ function StatementView({
     className: "card-title"
   }, "對帳單 / 請款單"), /*#__PURE__*/React.createElement("div", {
     className: "print-hint"
-  }, "💡 選月份→客戶自動篩選；選「全部客戶」一次列印所有客戶；選「全部月份」則列印該年度所有月份"), /*#__PURE__*/React.createElement("div", {
+  }, "💡 選月份→客戶自動篩選；選「全部客戶」一次列印所有客戶；選「全部月份」則列印該年度所有月份；選好月份按「一鍵下載」，每位客戶的銷貨單、對帳單會存成 PDF 打包下載"), /*#__PURE__*/React.createElement("div", {
     className: "form-grid g4",
     style: {
       marginBottom: 12
@@ -7702,7 +7788,11 @@ function StatementView({
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn btn-gold",
     onClick: handlePrint
-  }, "🖨 列印對帳單")))))
+  }, "🖨 列印對帳單"), /*#__PURE__*/React.createElement("button", {
+    className: "btn btn-primary",
+    onClick: handleDownload,
+    disabled: !!dlMsg
+  }, dlMsg || "📥 一鍵下載本月銷貨單＋對帳單")))))
 }
 
 /* ===== MONTHLY REPORT ===== */
@@ -9644,7 +9734,7 @@ function App() {
     }
   };
   const PROTECTED_TABS = ['purchase', 'resin', 'statement', 'monthly', 'receivables', 'settings', 'quotes'];
-  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['quotes', '📝 報價單'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['resin', '🧪 塑膠訂購單'], ['monthly', '📈 月銷售報表'], ['settings', '⚙️ 設定']];
+  const ALL_TABS = [['orders', '📋 銷貨單管理'], ['statement', '📊 對帳單'], ['receivables', '💰 應收帳款'], ['purchase', '📦 訂購單管理'], ['quotes', '📝 報價單'], ['resin', '🧪 塑膠訂購單'], ['monthly', '📈 月銷售報表'], ['settings', '⚙️ 設定']];
   const visibleTabs = loggedIn ? ALL_TABS : [['orders', '📋 銷貨單管理']];
   useEffect(() => {
     const DEFS = {
