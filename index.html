@@ -4130,11 +4130,14 @@ window.onload=function(){
   var rh=[].map.call(drs,function(el){return el.offsetHeight;});
   document.getElementById('meas').remove();
   // 第一頁：公司抬頭＋客戶資料＋頁尾地址；第二頁起只放小標題（續），不重複抬頭、客戶資料和公司地址，省空間少分頁
-  function capOf(p){return PH-4-mchH-(p===0?mhH+mfH:mcH);}
+  // noFtr：第一頁不印頁尾公司地址（拿掉頁尾就能整張印在一頁時才使用）
+  var noFtr=false;var pages,splitNote;
+  function capOf(p){return PH-4-mchH-(p===0?mhH+(noFtr?0:mfH):mcH);}
   function head(p,pg){return p===0?D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info:'<div class="ttl ttl-c">'+D.title+'（續）'+pg+'</div>';}
-  function foot(p){return p===0?D.ftr:'';}
+  function foot(p){return p===0&&!noFtr?D.ftr:'';}
+  function layout(){
   // 初步分頁（估算）
-  var pages=[];var cur=[];var usedH=0;
+  pages=[];var cur=[];var usedH=0;
   for(var i=0;i<rh.length;i++){
     if(usedH+rh[i]<=capOf(pages.length)||!cur.length){cur.push(i);usedH+=rh[i];}
     else{pages.push(cur);cur=[i];usedH=rh[i];}
@@ -4183,7 +4186,14 @@ window.onload=function(){
   buildRowsOnly();
   var lastDivs=document.getElementById('out').querySelectorAll('.page');
   var lastUsedH=lastDivs.length?lastDivs[lastDivs.length-1].offsetHeight:0;
-  var splitNote=mnH>0&&(lastUsedH+mnH>PH-4);
+  splitNote=mnH>0&&(lastUsedH+mnH>PH-4);
+  }
+  layout();
+  // 超過一頁時，試試拿掉第一頁頁尾（公司地址）能否塞進一頁；不行就恢復原本分頁
+  if(pages.length+(splitNote?1:0)>1){
+    noFtr=true;layout();
+    if(pages.length+(splitNote?1:0)>1){noFtr=false;layout();}
+  }
   // 建立最終頁面（含備註／L型圖）
   function build(){
     var tp=pages.length;
@@ -4374,8 +4384,12 @@ window.onload=function(){
   var drs=document.querySelectorAll('#mr .dr');
   var rh=[].map.call(drs,function(el){return el.offsetHeight;});
   document.getElementById('meas').remove();
-  var ovh=mhH+mchH+mfH;
-  var pages=[];var cur=[];var usedH=0;
+  // noFtr：不印頁尾公司地址（拿掉頁尾就能整張印在一頁時才使用）
+  var noFtr=false;var pages,splitNote,ovh;
+  function ftr(){return noFtr?'':D.ftr;}
+  function layout(){
+  ovh=mhH+mchH+(noFtr?0:mfH);
+  pages=[];var cur=[];var usedH=0;
   for(var i=0;i<rh.length;i++){
     if(usedH+rh[i]<=PH-4-ovh){cur.push(i);usedH+=rh[i];}
     else{if(cur.length){pages.push(cur.slice());}cur=[i];usedH=rh[i];}
@@ -4399,7 +4413,7 @@ window.onload=function(){
       div.className='page'+(isLast?' last':'');
       div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
         +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLast?D.sign:'')+'</tbody></table>'
-        +D.ftr;
+        +ftr();
       out.appendChild(div);
     }
   }
@@ -4420,7 +4434,14 @@ window.onload=function(){
   buildRowsOnly();
   var lastDivs=document.getElementById('out').querySelectorAll('.page');
   var lastUsedH=lastDivs.length?lastDivs[lastDivs.length-1].offsetHeight:0;
-  var splitNote=mnH>0&&(lastUsedH+mnH>PH-4);
+  splitNote=mnH>0&&(lastUsedH+mnH>PH-4);
+  }
+  layout();
+  // 超過一頁時，試試拿掉頁尾（公司地址）能否塞進一頁；不行就恢復原本分頁
+  if(pages.length+(splitNote?1:0)>1){
+    noFtr=true;layout();
+    if(pages.length+(splitNote?1:0)>1){noFtr=false;layout();}
+  }
   function build(){
     var tp=pages.length;
     var totalPages=tp+(splitNote?1:0);
@@ -4437,14 +4458,14 @@ window.onload=function(){
       div.className='page'+(isVeryLast?' last':'');
       div.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg+'</div>'+D.info
         +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+tail+'</tbody></table>'
-        +D.ftr;
+        +ftr();
       out.appendChild(div);
     }
     if(splitNote){
       var pg2=totalPages>1?'　<span class="pg">(第'+totalPages+'頁/共'+totalPages+'頁)</span>':'';
       var ndiv=document.createElement('div');
       ndiv.className='page last';
-      ndiv.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg2+'</div>'+D.info+D.noteBig+D.ftr;
+      ndiv.innerHTML=D.hdr+'<div class="ttl">'+D.title+pg2+'</div>'+D.info+D.noteBig+ftr();
       out.appendChild(ndiv);
     }
   }
@@ -7507,9 +7528,12 @@ window.onload=function(){
     let mgH=document.getElementById('mg_'+ci).offsetHeight;
     let allTrs=document.querySelectorAll('#mr_'+ci+' tr');
     let rh=[].map.call(allTrs,function(el){return el.offsetHeight;});
-    let ovh=mhH+mchH+mfH;
+    // nf：不印頁尾公司地址（拿掉頁尾就能整張印在一頁時才使用）
+    let nf=false;let pages,ovh;
+    function runCust(){
+    ovh=mhH+mchH+(nf?0:mfH);
     // 初步分頁
-    let pages=[];let cur=[];let usedH=0;
+    pages=[];let cur=[];let usedH=0;
     for(let i=0;i<rh.length;i++){
       let canBreak=true;
       if(cd.t[i]==='data'&&i>0&&cd.t[i-1]==='hdr')canBreak=false;
@@ -7547,7 +7571,7 @@ window.onload=function(){
         div.className='page cust-'+ci+(isVeryLast?' last':'');
         div.innerHTML=D.hdr+'<div class="ttl">請款對帳單'+pg+'</div>'+cd.info
           +'<table><thead><tr>'+D.ch+'</tr></thead><tbody>'+rows+(isLastPageOfCust?cd.grand:'')+'</tbody></table>'
-          +D.ftr;
+          +(nf?'':D.ftr);
         out.appendChild(div);
       }
     }
@@ -7572,6 +7596,10 @@ window.onload=function(){
       if(!changed)break;
       buildCust();
     }
+    return pages.length;
+    }
+    // 超過一頁時，試試拿掉頁尾（公司地址）能否塞進一頁；不行就恢復原本分頁
+    if(runCust()>1){nf=true;if(runCust()>1){nf=false;runCust();}}
   }
   document.getElementById('meas').remove();
   setTimeout(function(){window.print();},500);
